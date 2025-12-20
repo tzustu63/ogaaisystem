@@ -1,0 +1,19 @@
+{
+  "name": "oga-ai-system",
+  "version": "1.0.0",
+  "description": "高等教育國際化策略執行管理系統",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "test": "turbo run test",
+    "lint": "turbo run lint"
+  },
+  "devDependencies": {
+    "turbo": "^1.10.0"
+  }
+}
+
