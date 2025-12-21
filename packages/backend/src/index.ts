@@ -10,7 +10,15 @@ const PORT = process.env.PORT || 3001;
 
 // Middleware
 app.use(helmet());
-app.use(cors());
+// CORS 配置：允許前端來源
+app.use(cors({
+  origin: [
+    'http://localhost:23000',  // MCP 前端
+    'http://localhost:13000',  // 原有前端
+    'http://localhost:3000',   // 開發環境
+  ],
+  credentials: true,
+}));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 

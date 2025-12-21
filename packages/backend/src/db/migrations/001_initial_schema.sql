@@ -57,7 +57,6 @@ CREATE TABLE kpi_registry (
 );
 
 CREATE TABLE kpi_versions (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   kpi_id UUID REFERENCES kpi_registry(id) ON DELETE CASCADE,
   version INTEGER NOT NULL,
   definition TEXT,

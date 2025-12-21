@@ -1,7 +1,9 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
+import { authApi } from '@/lib/api';
 
 const menuItems = [
   {
@@ -52,16 +54,68 @@ const menuItems = [
   },
 ];
 
+interface CurrentUser {
+  id: string;
+  username: string;
+  email: string;
+  fullName: string;
+  roles: string[];
+}
+
 export default function Sidebar() {
   const pathname = usePathname();
+  const router = useRouter();
+  const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetchCurrentUser();
+  }, []);
+
+  const fetchCurrentUser = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        setLoading(false);
+        return;
+      }
+      const res = await authApi.getMe();
+      // 後端返回的結構是 { user: {...} }
+      const userData = res.data.user || res.data;
+      setCurrentUser({
+        id: userData.id,
+        username: userData.username,
+        email: userData.email,
+        fullName: userData.full_name || userData.fullName,
+        roles: userData.roles || [],
+      });
+    } catch (error) {
+      console.error('Error fetching current user:', error);
+      // 如果 token 無效，清除但不重定向（讓用戶繼續使用，但隱藏用戶信息）
+      // localStorage.removeItem('token');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleLogout = () => {
+    // 清除 token
+    localStorage.removeItem('token');
+    // 重定向到登入頁
+    router.push('/login');
+  };
 
   return (
-    <div className="w-64 bg-gray-800 text-white min-h-screen p-4">
+    <div className="w-64 bg-gray-800 text-white min-h-screen p-4 flex flex-col">
       <div className="mb-8">
-        <h1 className="text-xl font-bold">策略執行管理系統</h1>
+        <Link href="/">
+          <h1 className="text-xl font-bold hover:text-gray-300 cursor-pointer transition-colors">
+            策略執行管理系統
+          </h1>
+        </Link>
       </div>
 
-      <nav>
+      <nav className="flex-1">
         {menuItems.map((item) => (
           <div key={item.title} className="mb-4">
             <Link
@@ -92,6 +146,36 @@ export default function Sidebar() {
           </div>
         ))}
       </nav>
+
+      {/* 用戶信息和登出按鈕 */}
+      <div className="mt-auto pt-4 border-t border-gray-700">
+        {!loading && currentUser && (
+          <div className="mb-3">
+            <div className="px-4 py-2">
+              <div className="text-sm font-medium">{currentUser.fullName || currentUser.username}</div>
+              <div className="text-xs text-gray-400 mt-1">{currentUser.email}</div>
+              {currentUser.roles && currentUser.roles.length > 0 && (
+                <div className="flex flex-wrap gap-1 mt-2">
+                  {currentUser.roles.map((role, index) => (
+                    <span
+                      key={index}
+                      className="px-2 py-0.5 bg-gray-700 text-gray-300 rounded text-xs"
+                    >
+                      {role === 'admin' ? '管理員' : role}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+        <button
+          onClick={handleLogout}
+          className="w-full px-4 py-2 bg-red-600 hover:bg-red-700 rounded text-sm font-medium transition-colors"
+        >
+          登出
+        </button>
+      </div>
     </div>
   );
 }

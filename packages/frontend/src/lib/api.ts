@@ -18,6 +18,21 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+// 響應攔截器：處理 401 錯誤（未認證）
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401) {
+      // 清除 token 並重定向到登入頁
+      localStorage.removeItem('token');
+      if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/login')) {
+        window.location.href = '/login';
+      }
+    }
+    return Promise.reject(error);
+  }
+);
+
 // KPI API
 export const kpiApi = {
   getAll: () => api.get('/kpi'),
@@ -126,6 +141,13 @@ export const settingsApi = {
 export const auditApi = {
   getAuditLogs: (params?: any) => api.get('/audit', { params }),
   getAuditDiff: (id: string) => api.get(`/audit/${id}/diff`),
+};
+
+// Auth API
+export const authApi = {
+  login: (username: string, password: string) => 
+    api.post('/auth/login', { username, password }),
+  getMe: () => api.get('/auth/me'),
 };
 
 export default api;

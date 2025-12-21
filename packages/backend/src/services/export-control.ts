@@ -32,8 +32,8 @@ export const hasExportPermission = async (
 ): Promise<boolean> => {
   const roles = await getUserRoles(userId);
   
-  // 系統管理員有所有權限
-  const isAdmin = roles.some((r) => r.roleName === 'system_admin');
+  // 系統管理員有所有權限（支援 'admin' 和 'system_admin'）
+  const isAdmin = roles.some((r) => r.roleName === 'system_admin' || r.roleName === 'admin');
   if (isAdmin) return true;
 
   // 檢查是否有匯出權限

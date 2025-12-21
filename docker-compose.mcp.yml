@@ -1,0 +1,150 @@
+# MCP 獨立部署配置 - 避免與現有服務衝突
+# 使用不同的端口範圍和容器名稱
+services:
+  # PostgreSQL 資料庫（獨立容器）
+  postgres:
+    image: postgres:15-alpine
+    container_name: oga-mcp-postgres
+    environment:
+      POSTGRES_DB: oga_ai_system
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      PGDATA: /var/lib/postgresql/data/pgdata
+    ports:
+      - "25432:5432"  # 使用不同的端口避免衝突
+    volumes:
+      - postgres_mcp_data:/var/lib/postgresql/data
+      - ./packages/backend/src/db/migrations:/docker-entrypoint-initdb.d/migrations:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - oga-mcp-network
+    restart: unless-stopped
+
+  # Redis 快取
+  redis:
+    image: redis:7-alpine
+    container_name: oga-mcp-redis
+    ports:
+      - "26379:6379"  # 使用不同的端口避免衝突
+    volumes:
+      - redis_mcp_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - oga-mcp-network
+    restart: unless-stopped
+
+  # MinIO 物件儲存
+  minio:
+    image: minio/minio:latest
+    container_name: oga-mcp-minio
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "29000:9000"   # 使用不同的端口避免衝突
+      - "29001:9001"   # 使用不同的端口避免衝突
+    volumes:
+      - minio_mcp_data:/data
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    networks:
+      - oga-mcp-network
+    restart: unless-stopped
+
+  # Backend API 服務
+  backend:
+    build:
+      context: .
+      dockerfile: packages/backend/Dockerfile
+    container_name: oga-mcp-backend
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: oga_ai_system
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      MINIO_ENDPOINT: minio
+      MINIO_PORT: 9000
+      MINIO_USE_SSL: "false"
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+      MINIO_BUCKET: oga-ai-system
+      JWT_SECRET: ${JWT_SECRET:-your-secret-key-change-in-production}
+      JWT_EXPIRES_IN: 7d
+    ports:
+      - "23001:3001"  # 使用不同的端口避免衝突
+    volumes:
+      - ./packages/backend/src:/app/src:ro
+      - backend_mcp_logs:/app/logs
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    networks:
+      - oga-mcp-network
+    restart: unless-stopped
+    command: >
+      sh -c "
+        echo '等待資料庫就緒...' &&
+        sleep 5 &&
+        echo '執行資料庫遷移...' &&
+        cd /app/packages/backend &&
+        npm run migrate 001_initial_schema.sql 2>&1 || echo '遷移 001 可能已執行' &&
+        npm run migrate 002_add_missing_features.sql 2>&1 || echo '遷移 002 可能已執行' &&
+        echo '啟動後端服務...' &&
+        npm start
+      "
+
+  # Frontend 應用
+  frontend:
+    build:
+      context: .
+      dockerfile: packages/frontend/Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:23001/api  # 構建時傳遞環境變數
+    container_name: oga-mcp-frontend
+    environment:
+      NODE_ENV: production
+      NEXT_PUBLIC_API_URL: http://localhost:23001/api  # 運行時環境變數（Next.js 構建時已內嵌）
+    ports:
+      - "23000:3000"  # 使用不同的端口避免衝突
+    depends_on:
+      backend:
+        condition: service_started
+    networks:
+      - oga-mcp-network
+    restart: unless-stopped
+
+volumes:
+  postgres_mcp_data:
+    driver: local
+  redis_mcp_data:
+    driver: local
+  minio_mcp_data:
+    driver: local
+  backend_mcp_logs:
+    driver: local
+
+networks:
+  oga-mcp-network:
+    driver: bridge

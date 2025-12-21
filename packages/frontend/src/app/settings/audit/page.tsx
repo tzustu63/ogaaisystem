@@ -62,6 +62,32 @@ export default function AuditPage() {
     return labels[action] || action;
   };
 
+  const getEntityTypeLabel = (entityType: string) => {
+    const labels: Record<string, string> = {
+      kpi: 'KPI',
+      initiatives: '策略專案',
+      okr: 'OKR',
+      tasks: '任務',
+      raci: 'RACI 工作流',
+      incidents: '事件',
+      pdca: 'PDCA 循環',
+      users: '用戶',
+      roles: '角色',
+      settings: '系統設定',
+      notifications: '通知設定',
+      audit: '稽核日誌',
+      gdpr: '個資合規',
+      integrations: '系統對接',
+      'data-quality': '資料品質',
+      'data-import': '資料匯入',
+      export: '資料匯出',
+      upload: '檔案上傳',
+      trace: '追蹤',
+      bsc: 'BSC 平衡計分卡',
+    };
+    return labels[entityType] || entityType || '未知';
+  };
+
   if (loading) {
     return <div className="p-8">載入中...</div>;
   }
@@ -103,7 +129,9 @@ export default function AuditPage() {
                           <span className="text-sm text-gray-600">
                             {getActionLabel(log.action_type)}
                           </span>
-                          <span className="text-sm text-gray-500">{log.entity_type}</span>
+                          <span className="text-sm text-gray-500">
+                            {getEntityTypeLabel(log.entity_type)}
+                          </span>
                         </div>
                         {log.field_name && (
                           <p className="text-xs text-gray-500 mt-1">欄位：{log.field_name}</p>

@@ -41,8 +41,8 @@ export const hasPermission = async (
 ): Promise<boolean> => {
   const roles = await getUserRoles(userId);
 
-  // 檢查是否有系統管理員角色
-  const isAdmin = roles.some((r) => r.roleName === 'system_admin');
+  // 檢查是否有系統管理員角色（支援 'admin' 和 'system_admin'）
+  const isAdmin = roles.some((r) => r.roleName === 'system_admin' || r.roleName === 'admin');
   if (isAdmin) return true;
 
   // 檢查權限
@@ -71,8 +71,8 @@ export const canAccessResource = async (
 ): Promise<boolean> => {
   const roles = await getUserRoles(userId);
 
-  // 系統管理員可以存取所有資源
-  const isAdmin = roles.some((r) => r.roleName === 'system_admin');
+  // 系統管理員可以存取所有資源（支援 'admin' 和 'system_admin'）
+  const isAdmin = roles.some((r) => r.roleName === 'system_admin' || r.roleName === 'admin');
   if (isAdmin) return true;
 
   // 根據 resourceType 和 scope 檢查
@@ -129,7 +129,7 @@ export const getAccessibleResources = async (
   const roles = await getUserRoles(userId);
 
   // 系統管理員可以存取所有資源
-  const isAdmin = roles.some((r) => r.roleName === 'system_admin');
+  const isAdmin = roles.some((r) => r.roleName === 'system_admin' || r.roleName === 'admin');
   if (isAdmin) {
     // 返回所有資源 ID
     const result = await pool.query(
