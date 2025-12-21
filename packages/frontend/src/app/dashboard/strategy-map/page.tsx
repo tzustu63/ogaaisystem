@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import ReactECharts from 'echarts-for-react';
 import api from '@/lib/api';
+import Link from 'next/link';
 
 interface BSCObjective {
   id: string;
@@ -18,11 +19,31 @@ interface CausalLink {
   to_objective?: BSCObjective;
 }
 
+interface Initiative {
+  id: string;
+  name: string;
+  status: string;
+  progress: number;
+  bsc_perspective?: string;
+}
+
+interface OKR {
+  id: string;
+  objective: string;
+  quarter: string;
+  status: string;
+  progress: number;
+  initiative_id?: string;
+}
+
 export default function StrategyMapPage() {
   const [objectives, setObjectives] = useState<BSCObjective[]>([]);
   const [links, setLinks] = useState<CausalLink[]>([]);
+  const [initiatives, setInitiatives] = useState<Initiative[]>([]);
+  const [okrs, setOKRs] = useState<OKR[]>([]);
   const [loading, setLoading] = useState(true);
   const [collapsedPerspectives, setCollapsedPerspectives] = useState<Set<string>>(new Set());
+  const [selectedPerspective, setSelectedPerspective] = useState<string | null>(null);
 
   useEffect(() => {
     fetchData();
@@ -30,9 +51,11 @@ export default function StrategyMapPage() {
 
   const fetchData = async () => {
     try {
-      const [objectivesRes, linksRes] = await Promise.all([
+      const [objectivesRes, linksRes, initRes, okrRes] = await Promise.all([
         api.get('/bsc/objectives'),
         api.get('/bsc/causal-links'),
+        api.get('/initiatives'),
+        api.get('/okr'),
       ]);
 
       const objectivesData = objectivesRes.data.map((obj: any) => ({
@@ -59,6 +82,8 @@ export default function StrategyMapPage() {
 
       setObjectives(objectivesData);
       setLinks(linksData);
+      setInitiatives(initRes.data || []);
+      setOKRs(okrRes.data || []);
       setLoading(false);
     } catch (error) {
       console.error('Error fetching data:', error);
@@ -71,8 +96,17 @@ export default function StrategyMapPage() {
       ];
       setObjectives(mockObjectives);
       setLinks([]);
+      setInitiatives([]);
+      setOKRs([]);
       setLoading(false);
     }
+  };
+
+  const perspectiveLabels: Record<string, string> = {
+    financial: '財務構面',
+    customer: '客戶構面',
+    internal_process: '內部流程構面',
+    learning_growth: '學習成長構面',
   };
 
   const getChartOption = () => {
@@ -225,7 +259,7 @@ export default function StrategyMapPage() {
         </div>
 
         {/* 因果鏈列表 */}
-        <div className="bg-white rounded-lg shadow p-6">
+        <div className="bg-white rounded-lg shadow p-6 mb-6">
           <h2 className="text-xl font-semibold mb-4">因果鏈列表</h2>
           <div className="space-y-3">
             {links.map((link) => (
@@ -239,6 +273,83 @@ export default function StrategyMapPage() {
                 </div>
               </div>
             ))}
+            {links.length === 0 && (
+              <p className="text-gray-500 text-center py-4">尚無因果鏈資料</p>
+            )}
+          </div>
+        </div>
+
+        {/* 策略執行總覽 */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* 策略專案 */}
+          <div className="bg-white rounded-lg shadow p-6">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-semibold">📋 策略專案</h2>
+              <Link href="/initiatives" className="text-primary-600 hover:underline text-sm">
+                查看全部 →
+              </Link>
+            </div>
+            <div className="space-y-3">
+              {initiatives.slice(0, 4).map((initiative) => (
+                <div key={initiative.id} className="p-3 bg-gray-50 rounded">
+                  <div className="flex justify-between items-center mb-1">
+                    <Link href={`/initiatives/${initiative.id}`} className="font-medium text-sm hover:text-primary-600">
+                      {initiative.name}
+                    </Link>
+                    <span className={`px-2 py-0.5 text-xs rounded ${
+                      initiative.status === 'completed' ? 'bg-green-100 text-green-800' :
+                      initiative.status === 'in_progress' || initiative.status === 'active' ? 'bg-blue-100 text-blue-800' :
+                      'bg-gray-100 text-gray-800'
+                    }`}>
+                      {initiative.status === 'completed' ? '已完成' :
+                       initiative.status === 'in_progress' || initiative.status === 'active' ? '進行中' : initiative.status}
+                    </span>
+                  </div>
+                  <div className="w-full bg-gray-200 rounded-full h-1.5">
+                    <div 
+                      className="bg-primary-600 h-1.5 rounded-full" 
+                      style={{ width: `${initiative.progress || 0}%` }}
+                    />
+                  </div>
+                </div>
+              ))}
+              {initiatives.length === 0 && (
+                <p className="text-gray-500 text-center py-4">尚無策略專案</p>
+              )}
+            </div>
+          </div>
+
+          {/* OKR 管理 */}
+          <div className="bg-white rounded-lg shadow p-6">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-semibold">🎯 OKR 進度</h2>
+              <Link href="/okr" className="text-primary-600 hover:underline text-sm">
+                查看全部 →
+              </Link>
+            </div>
+            <div className="space-y-3">
+              {okrs.slice(0, 4).map((okr) => (
+                <div key={okr.id} className="p-3 bg-gray-50 rounded">
+                  <div className="flex justify-between items-center mb-1">
+                    <p className="font-medium text-sm">{okr.objective}</p>
+                    <span className="text-xs text-gray-500">{okr.quarter}</span>
+                  </div>
+                  <div className="w-full bg-gray-200 rounded-full h-1.5">
+                    <div 
+                      className={`h-1.5 rounded-full ${
+                        (okr.progress || 0) >= 70 ? 'bg-green-500' :
+                        (okr.progress || 0) >= 40 ? 'bg-yellow-500' : 'bg-red-500'
+                      }`}
+                      style={{ width: `${okr.progress || 0}%` }}
+                    />
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">{okr.progress || 0}%</p>
+                </div>
+              ))}
+              {okrs.length === 0 && (
+                <p className="text-gray-500 text-center py-4">尚無 OKR</p>
+              )}
+            </div>
           </div>
         </div>
       </div>

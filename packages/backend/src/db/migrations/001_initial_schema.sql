@@ -31,7 +31,7 @@ CREATE TABLE user_roles (
   PRIMARY KEY (user_id, role_id, scope_type, scope_value)
 );
 
--- KPI Registry 表
+-- KPI 管理表
 CREATE TABLE kpi_registry (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   kpi_id VARCHAR(100) UNIQUE NOT NULL,

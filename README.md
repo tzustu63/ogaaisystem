@@ -74,7 +74,7 @@ cd packages/frontend && npm run dev
 
 ## 核心模組
 
-1. **KPI Registry** - 指標字典與治理中樞
+1. **KPI 管理** - 指標字典與治理中樞
 2. **戰略地圖與儀表板** - BSC 四構面管理
 3. **策略專案與 OKR 管理** - Initiative 與 OKR 生命週期
 4. **RACI 權責矩陣與工作流引擎** - 可執行工作流

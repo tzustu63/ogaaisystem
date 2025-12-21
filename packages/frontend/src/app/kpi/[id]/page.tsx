@@ -246,7 +246,7 @@ export default function KPIDetailPage() {
             </Link>
             <span>/</span>
             <Link href="/kpi" className="hover:text-gray-900">
-              KPI Registry
+              持續且重要目標
             </Link>
             <span>/</span>
             <span className="text-gray-900">{kpi.name_zh}</span>
@@ -353,7 +353,7 @@ export default function KPIDetailPage() {
           <div className="p-6">
             <div className="space-y-4">
               <div>
-                <h3 className="font-medium mb-2">相關 Initiatives</h3>
+                <h3 className="font-medium mb-2">相關策略專案</h3>
                 <p className="text-sm text-gray-600">
                   <Link href={`/initiatives?kpi_id=${kpi.id}`} className="text-blue-600 hover:underline">
                     查看相關策略專案 →

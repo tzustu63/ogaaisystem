@@ -9,16 +9,21 @@ const createInitiativeSchema = z.object({
   initiative_id: z.string().min(1),
   name_zh: z.string().min(1),
   name_en: z.string().optional(),
-  initiative_type: z.enum(['policy_response', 'ranking_improvement', 'risk_control', 'innovation']),
+  initiative_type: z.string().min(1),
   status: z.enum(['planning', 'in_progress', 'completed', 'cancelled']),
   risk_level: z.enum(['high', 'medium', 'low']).optional(),
   start_date: z.string().optional(),
   end_date: z.string().optional(),
   budget: z.number().optional(),
   responsible_unit: z.string().min(1),
-  bsc_objective_ids: z.array(z.string().uuid()).min(1),
+  primary_owner: z.string().optional(),
+  co_owners: z.array(z.string()).optional(),
+  funding_sources: z.array(z.string()).optional(),
+  related_indicators: z.array(z.string()).optional(),
+  bsc_perspective: z.string().min(1),
+  bsc_objective_ids: z.array(z.string().uuid()).optional(),
   kpi_ids: z.array(z.string().uuid()).optional(),
-  program_tags: z.array(z.string()).optional(),
+  notes: z.string().optional(),
 });
 
 // 取得所有 Initiatives
@@ -110,8 +115,9 @@ router.post('/', authenticate, async (req: AuthRequest, res) => {
     const result = await client.query(
       `INSERT INTO initiatives (
         initiative_id, name_zh, name_en, initiative_type, status, risk_level,
-        start_date, end_date, budget, responsible_unit, created_by
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        start_date, end_date, budget, responsible_unit, primary_owner, co_owners,
+        funding_sources, related_indicators, bsc_perspective, notes, created_by
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
       RETURNING *`,
       [
         validated.initiative_id,
@@ -124,18 +130,26 @@ router.post('/', authenticate, async (req: AuthRequest, res) => {
         validated.end_date || null,
         validated.budget || null,
         validated.responsible_unit,
+        validated.primary_owner || null,
+        validated.co_owners || null,
+        validated.funding_sources || null,
+        validated.related_indicators || null,
+        validated.bsc_perspective,
+        validated.notes || null,
         req.user?.id,
       ]
     );
 
     const initiativeId = result.rows[0].id;
 
-    // 關聯 BSC 目標
-    for (const objectiveId of validated.bsc_objective_ids) {
-      await client.query(
-        'INSERT INTO initiative_bsc_objectives (initiative_id, objective_id) VALUES ($1, $2)',
-        [initiativeId, objectiveId]
-      );
+    // 關聯 BSC 目標（如有選擇具體目標）
+    if (validated.bsc_objective_ids && validated.bsc_objective_ids.length > 0) {
+      for (const objectiveId of validated.bsc_objective_ids) {
+        await client.query(
+          'INSERT INTO initiative_bsc_objectives (initiative_id, objective_id) VALUES ($1, $2)',
+          [initiativeId, objectiveId]
+        );
+      }
     }
 
     // 關聯 KPI（如有）
@@ -149,15 +163,7 @@ router.post('/', authenticate, async (req: AuthRequest, res) => {
       }
     }
 
-    // 標記適用計畫（如有）
-    if (validated.program_tags && validated.program_tags.length > 0) {
-      for (const program of validated.program_tags) {
-        await client.query(
-          'INSERT INTO initiative_programs (initiative_id, program) VALUES ($1, $2)',
-          [initiativeId, program]
-        );
-      }
-    }
+    // 備註已在 INSERT 中處理，不需額外操作
 
     await client.query('COMMIT');
     res.status(201).json(result.rows[0]);

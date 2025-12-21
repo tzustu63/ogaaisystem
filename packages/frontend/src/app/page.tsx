@@ -15,13 +15,13 @@ export default function Home() {
           </Link>
           
           <Link href="/kpi" className="p-6 bg-white rounded-lg shadow hover:shadow-lg transition">
-            <h2 className="text-2xl font-semibold mb-2">📈 KPI Registry</h2>
+            <h2 className="text-2xl font-semibold mb-2">📈 持續且重要目標</h2>
             <p className="text-gray-600">管理指標字典與定義</p>
           </Link>
           
           <Link href="/initiatives" className="p-6 bg-white rounded-lg shadow hover:shadow-lg transition">
             <h2 className="text-2xl font-semibold mb-2">🎯 策略專案</h2>
-            <p className="text-gray-600">管理 Initiatives 與 OKR</p>
+            <p className="text-gray-600">管理策略專案與 OKR</p>
           </Link>
           
           <Link href="/kanban" className="p-6 bg-white rounded-lg shadow hover:shadow-lg transition">

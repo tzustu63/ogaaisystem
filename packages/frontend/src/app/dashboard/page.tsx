@@ -6,20 +6,44 @@ import api from '@/lib/api';
 import Link from 'next/link';
 import ReactECharts from 'echarts-for-react';
 
+interface Initiative {
+  id: string;
+  name: string;
+  status: string;
+  progress: number;
+  start_date: string;
+  end_date: string;
+}
+
+interface OKR {
+  id: string;
+  objective: string;
+  quarter: string;
+  status: string;
+  progress: number;
+  key_results_count?: number;
+}
+
 export default function DashboardPage() {
   const [kpis, setKpis] = useState<any[]>([]);
   const [dashboardSummary, setDashboardSummary] = useState<any>(null);
+  const [initiatives, setInitiatives] = useState<Initiative[]>([]);
+  const [okrs, setOKRs] = useState<OKR[]>([]);
   const [loading, setLoading] = useState(true);
-  const [viewMode, setViewMode] = useState<'overview' | 'trend' | 'indicators' | 'drilldown'>('overview');
+  const [viewMode, setViewMode] = useState<'overview' | 'initiatives' | 'okr' | 'drilldown'>('overview');
 
   useEffect(() => {
     Promise.all([
       kpiApi.getAll(),
       api.get('/bsc/dashboard/summary'),
+      api.get('/initiatives'),
+      api.get('/okr'),
     ])
-      .then(([kpisRes, summaryRes]) => {
+      .then(([kpisRes, summaryRes, initRes, okrRes]) => {
         setKpis(kpisRes.data);
         setDashboardSummary(summaryRes.data);
+        setInitiatives(initRes.data || []);
+        setOKRs(okrRes.data || []);
         setLoading(false);
       })
       .catch((err) => {
@@ -144,20 +168,20 @@ export default function DashboardPage() {
               年度達成率
             </button>
             <button
-              onClick={() => setViewMode('trend')}
+              onClick={() => setViewMode('initiatives')}
               className={`px-4 py-2 rounded ${
-                viewMode === 'trend' ? 'bg-primary-600 text-white' : 'bg-gray-200'
+                viewMode === 'initiatives' ? 'bg-primary-600 text-white' : 'bg-gray-200'
               }`}
             >
-              趨勢圖
+              策略專案
             </button>
             <button
-              onClick={() => setViewMode('indicators')}
+              onClick={() => setViewMode('okr')}
               className={`px-4 py-2 rounded ${
-                viewMode === 'indicators' ? 'bg-primary-600 text-white' : 'bg-gray-200'
+                viewMode === 'okr' ? 'bg-primary-600 text-white' : 'bg-gray-200'
               }`}
             >
-              領先/落後指標
+              OKR 進度
             </button>
             <button
               onClick={() => setViewMode('drilldown')}
@@ -240,58 +264,152 @@ export default function DashboardPage() {
           </>
         )}
 
-        {/* 視圖2：趨勢圖 */}
-        {viewMode === 'trend' && (
-          <div className="bg-white rounded-lg shadow p-6">
-            <h2 className="text-xl font-semibold mb-4">趨勢圖視圖</h2>
-            <p className="text-gray-600">
-              請點擊下方 KPI 列表中的項目查看個別 KPI 的趨勢圖。
-            </p>
+        {/* 視圖2：策略專案 */}
+        {viewMode === 'initiatives' && (
+          <div className="space-y-6">
+            {/* 策略專案統計 */}
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div className="bg-white rounded-lg shadow p-4">
+                <p className="text-gray-600 text-sm">總專案數</p>
+                <p className="text-2xl font-bold">{initiatives.length}</p>
+              </div>
+              <div className="bg-white rounded-lg shadow p-4">
+                <p className="text-gray-600 text-sm">進行中</p>
+                <p className="text-2xl font-bold text-blue-600">
+                  {initiatives.filter(i => i.status === 'in_progress' || i.status === 'active').length}
+                </p>
+              </div>
+              <div className="bg-white rounded-lg shadow p-4">
+                <p className="text-gray-600 text-sm">已完成</p>
+                <p className="text-2xl font-bold text-green-600">
+                  {initiatives.filter(i => i.status === 'completed').length}
+                </p>
+              </div>
+              <div className="bg-white rounded-lg shadow p-4">
+                <p className="text-gray-600 text-sm">平均進度</p>
+                <p className="text-2xl font-bold text-purple-600">
+                  {initiatives.length > 0 
+                    ? Math.round(initiatives.reduce((sum, i) => sum + (i.progress || 0), 0) / initiatives.length)
+                    : 0}%
+                </p>
+              </div>
+            </div>
+
+            {/* 策略專案列表 */}
+            <div className="bg-white rounded-lg shadow">
+              <div className="p-4 border-b flex justify-between items-center">
+                <h2 className="text-xl font-semibold">策略專案總覽</h2>
+                <Link href="/initiatives" className="text-primary-600 hover:underline text-sm">
+                  查看全部 →
+                </Link>
+              </div>
+              <div className="p-4 space-y-3">
+                {initiatives.slice(0, 5).map((initiative) => (
+                  <div key={initiative.id} className="p-4 bg-gray-50 rounded-lg">
+                    <div className="flex justify-between items-start mb-2">
+                      <Link href={`/initiatives/${initiative.id}`} className="font-medium hover:text-primary-600">
+                        {initiative.name}
+                      </Link>
+                      <span className={`px-2 py-1 text-xs rounded ${
+                        initiative.status === 'completed' ? 'bg-green-100 text-green-800' :
+                        initiative.status === 'in_progress' || initiative.status === 'active' ? 'bg-blue-100 text-blue-800' :
+                        'bg-gray-100 text-gray-800'
+                      }`}>
+                        {initiative.status === 'completed' ? '已完成' :
+                         initiative.status === 'in_progress' || initiative.status === 'active' ? '進行中' :
+                         initiative.status === 'planned' ? '規劃中' : initiative.status}
+                      </span>
+                    </div>
+                    <div className="w-full bg-gray-200 rounded-full h-2">
+                      <div 
+                        className="bg-primary-600 h-2 rounded-full" 
+                        style={{ width: `${initiative.progress || 0}%` }}
+                      />
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1">進度: {initiative.progress || 0}%</p>
+                  </div>
+                ))}
+                {initiatives.length === 0 && (
+                  <p className="text-gray-500 text-center py-4">尚無策略專案</p>
+                )}
+              </div>
+            </div>
           </div>
         )}
 
-        {/* 視圖3：領先/落後指標 */}
-        {viewMode === 'indicators' && (
-          <div className="bg-white rounded-lg shadow p-6">
-            <h2 className="text-xl font-semibold mb-4">領先/落後指標標記</h2>
-            <div className="space-y-4">
-              <div>
-                <h3 className="font-medium mb-2">領先指標 (Leading Indicators)</h3>
-                <p className="text-sm text-gray-600 mb-4">
-                  可提前干預的指標，用於預測未來表現
-                </p>
-                <div className="space-y-2">
-                  {kpis
-                    .filter((k) => k.is_leading_indicator)
-                    .map((kpi) => (
-                      <div key={kpi.id} className="p-3 bg-blue-50 rounded">
-                        <span className="font-medium">{kpi.name_zh}</span>
-                        <span className="ml-2 text-xs text-blue-600">[領先指標]</span>
-                      </div>
-                    ))}
-                  {kpis.filter((k) => k.is_leading_indicator).length === 0 && (
-                    <p className="text-sm text-gray-500">尚無標記為領先指標的 KPI</p>
-                  )}
-                </div>
+        {/* 視圖3：OKR 進度 */}
+        {viewMode === 'okr' && (
+          <div className="space-y-6">
+            {/* OKR 統計 */}
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div className="bg-white rounded-lg shadow p-4">
+                <p className="text-gray-600 text-sm">總 OKR 數</p>
+                <p className="text-2xl font-bold">{okrs.length}</p>
               </div>
-              <div>
-                <h3 className="font-medium mb-2">落後指標 (Lagging Indicators)</h3>
-                <p className="text-sm text-gray-600 mb-4">
-                  結果指標，反映過去表現
+              <div className="bg-white rounded-lg shadow p-4">
+                <p className="text-gray-600 text-sm">進行中</p>
+                <p className="text-2xl font-bold text-blue-600">
+                  {okrs.filter(o => o.status === 'active' || o.status === 'in_progress').length}
                 </p>
-                <div className="space-y-2">
-                  {kpis
-                    .filter((k) => k.is_lagging_indicator)
-                    .map((kpi) => (
-                      <div key={kpi.id} className="p-3 bg-gray-50 rounded">
-                        <span className="font-medium">{kpi.name_zh}</span>
-                        <span className="ml-2 text-xs text-gray-600">[落後指標]</span>
+              </div>
+              <div className="bg-white rounded-lg shadow p-4">
+                <p className="text-gray-600 text-sm">已達成</p>
+                <p className="text-2xl font-bold text-green-600">
+                  {okrs.filter(o => o.status === 'achieved' || o.status === 'completed').length}
+                </p>
+              </div>
+              <div className="bg-white rounded-lg shadow p-4">
+                <p className="text-gray-600 text-sm">平均進度</p>
+                <p className="text-2xl font-bold text-purple-600">
+                  {okrs.length > 0 
+                    ? Math.round(okrs.reduce((sum, o) => sum + (o.progress || 0), 0) / okrs.length)
+                    : 0}%
+                </p>
+              </div>
+            </div>
+
+            {/* OKR 列表 */}
+            <div className="bg-white rounded-lg shadow">
+              <div className="p-4 border-b flex justify-between items-center">
+                <h2 className="text-xl font-semibold">OKR 總覽</h2>
+                <Link href="/okr" className="text-primary-600 hover:underline text-sm">
+                  查看全部 →
+                </Link>
+              </div>
+              <div className="p-4 space-y-3">
+                {okrs.slice(0, 5).map((okr) => (
+                  <div key={okr.id} className="p-4 bg-gray-50 rounded-lg">
+                    <div className="flex justify-between items-start mb-2">
+                      <div>
+                        <p className="font-medium">{okr.objective}</p>
+                        <p className="text-xs text-gray-500">{okr.quarter}</p>
                       </div>
-                    ))}
-                  {kpis.filter((k) => k.is_lagging_indicator).length === 0 && (
-                    <p className="text-sm text-gray-500">尚無標記為落後指標的 KPI</p>
-                  )}
-                </div>
+                      <span className={`px-2 py-1 text-xs rounded ${
+                        okr.status === 'achieved' || okr.status === 'completed' ? 'bg-green-100 text-green-800' :
+                        okr.status === 'active' || okr.status === 'in_progress' ? 'bg-blue-100 text-blue-800' :
+                        okr.status === 'at_risk' ? 'bg-red-100 text-red-800' :
+                        'bg-gray-100 text-gray-800'
+                      }`}>
+                        {okr.status === 'achieved' || okr.status === 'completed' ? '已達成' :
+                         okr.status === 'active' || okr.status === 'in_progress' ? '進行中' :
+                         okr.status === 'at_risk' ? '有風險' : okr.status}
+                      </span>
+                    </div>
+                    <div className="w-full bg-gray-200 rounded-full h-2">
+                      <div 
+                        className={`h-2 rounded-full ${
+                          (okr.progress || 0) >= 70 ? 'bg-green-500' :
+                          (okr.progress || 0) >= 40 ? 'bg-yellow-500' : 'bg-red-500'
+                        }`}
+                        style={{ width: `${okr.progress || 0}%` }}
+                      />
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1">進度: {okr.progress || 0}%</p>
+                  </div>
+                ))}
+                {okrs.length === 0 && (
+                  <p className="text-gray-500 text-center py-4">尚無 OKR</p>
+                )}
               </div>
             </div>
           </div>
@@ -302,8 +420,31 @@ export default function DashboardPage() {
           <div className="bg-white rounded-lg shadow p-6">
             <h2 className="text-xl font-semibold mb-4">下鑽路徑</h2>
             <p className="text-gray-600 mb-4">
-              點擊下方 KPI 可進行下鑽：KPI → OKR → Initiative → 任務 → 證據
+              從 BSC 構面出發，追蹤策略執行的完整路徑：
             </p>
+            <div className="flex items-center justify-center space-x-2 text-sm bg-gray-50 p-4 rounded-lg mb-6">
+              <span className="px-3 py-1 bg-red-100 text-red-800 rounded">BSC 構面</span>
+              <span>→</span>
+              <span className="px-3 py-1 bg-blue-100 text-blue-800 rounded">策略專案</span>
+              <span>→</span>
+              <span className="px-3 py-1 bg-purple-100 text-purple-800 rounded">OKR</span>
+              <span>→</span>
+              <span className="px-3 py-1 bg-green-100 text-green-800 rounded">任務</span>
+              <span>→</span>
+              <span className="px-3 py-1 bg-yellow-100 text-yellow-800 rounded">KPI</span>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <Link href="/initiatives" className="block p-4 border rounded-lg hover:bg-gray-50 transition-colors">
+                <h3 className="font-medium text-lg mb-2">📋 策略專案</h3>
+                <p className="text-sm text-gray-600">查看所有策略專案及其執行進度</p>
+                <p className="text-primary-600 text-sm mt-2">共 {initiatives.length} 個專案 →</p>
+              </Link>
+              <Link href="/okr" className="block p-4 border rounded-lg hover:bg-gray-50 transition-colors">
+                <h3 className="font-medium text-lg mb-2">🎯 OKR 管理</h3>
+                <p className="text-sm text-gray-600">查看目標與關鍵結果的達成情況</p>
+                <p className="text-primary-600 text-sm mt-2">共 {okrs.length} 個 OKR →</p>
+              </Link>
+            </div>
           </div>
         )}
 

@@ -21,12 +21,12 @@
 
 ### Phase 2: 核心模組開發
 
-#### 2.1 KPI Registry 模組 ✅
+#### 2.1 KPI 管理模組 ✅
 - ✅ 2.1.1 建立 KPI 主檔資料表
 - ✅ 2.1.2 實作 KPI CRUD API
 - ✅ 2.1.3 實作閾值模式設定（固定值/相對值/預測偏離）
 - ✅ 2.1.4 實作版本控管機制
-- ✅ 2.1.5 建立 KPI Registry 前端介面（列表頁）
+- ✅ 2.1.5 建立 KPI 管理前端介面（列表頁）
 - ✅ 2.1.6 實作 KPI 定義驗證邏輯
 
 #### 2.2 戰略地圖與儀表板模組 ⏳
@@ -117,7 +117,7 @@
 
 ### 後端 API 端點
 - `/api/auth` - 身份驗證
-- `/api/kpi` - KPI Registry
+- `/api/kpi` - KPI 管理
 - `/api/initiatives` - 策略專案
 - `/api/okr` - OKR 管理
 - `/api/tasks` - 任務管理
@@ -130,7 +130,7 @@
 ### 資料庫設計
 完整的 PostgreSQL schema 包含：
 - 使用者與角色管理
-- KPI Registry 與版本控管
+- KPI 管理與版本控管
 - BSC 四構面與因果鏈
 - Initiatives 與 OKR
 - RACI 模板與工作流

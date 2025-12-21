@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { kpiApi } from '@/lib/api';
 import Link from 'next/link';
@@ -28,9 +28,23 @@ interface KPIFormData {
   applicable_programs: string[];
 }
 
+interface ExistingKPI {
+  kpi_id: string;
+  bsc_perspective: string;
+}
+
+// BSC 構面對應的代碼
+const perspectiveCodeMap: Record<string, string> = {
+  financial: 'F',
+  customer: 'C',
+  internal_process: 'I',
+  learning_growth: 'L',
+};
+
 export default function NewKPIPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
+  const [existingKPIs, setExistingKPIs] = useState<ExistingKPI[]>([]);
   const [formData, setFormData] = useState<KPIFormData>({
     kpi_id: '',
     name_zh: '',
@@ -46,13 +60,68 @@ export default function NewKPIPage() {
     },
     thresholds: {
       mode: 'fixed',
-      green: { min: 0, max: 100 },
-      yellow: { min: 0, max: 80 },
-      red: { min: 0, max: 60 },
+      green: { min: 80, max: 100 },
+      yellow: { min: 60, max: 79 },
+      red: { min: 0, max: 59 },
     },
     evidence_requirements: [],
     applicable_programs: [],
   });
+
+  // 根據構面生成下一個可用的 KPI ID
+  const generateNextKpiId = useCallback((perspective: string, kpis: ExistingKPI[]): string => {
+    const code = perspectiveCodeMap[perspective] || 'F';
+    const prefix = `BSC-${code}-`;
+    
+    // 找出該構面所有現有的編號
+    const existingNumbers = kpis
+      .filter(kpi => kpi.kpi_id && kpi.kpi_id.startsWith(prefix))
+      .map(kpi => {
+        const match = kpi.kpi_id.match(/BSC-[FCIL]-(\d{3})$/);
+        return match ? parseInt(match[1], 10) : 0;
+      })
+      .filter(n => !isNaN(n));
+    
+    // 找出最大編號並 +1
+    const maxNumber = existingNumbers.length > 0 ? Math.max(...existingNumbers) : 0;
+    const nextNumber = maxNumber + 1;
+    
+    // 格式化為三位數
+    return `${prefix}${String(nextNumber).padStart(3, '0')}`;
+  }, []);
+
+  // 載入現有 KPI 列表
+  useEffect(() => {
+    const fetchExistingKPIs = async () => {
+      try {
+        const response = await kpiApi.getAll();
+        const kpis = response.data || [];
+        setExistingKPIs(kpis);
+        
+        // 生成初始 KPI ID
+        const initialId = generateNextKpiId('financial', kpis);
+        setFormData(prev => ({ ...prev, kpi_id: initialId }));
+      } catch (error) {
+        console.error('Error fetching existing KPIs:', error);
+        // 即使獲取失敗，也設定一個預設值
+        setFormData(prev => ({ ...prev, kpi_id: 'BSC-F-001' }));
+      }
+    };
+    
+    fetchExistingKPIs();
+  }, [generateNextKpiId]);
+
+  // 當 BSC 構面改變時，重新生成 KPI ID
+  const handlePerspectiveChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const newPerspective = e.target.value;
+    const newKpiId = generateNextKpiId(newPerspective, existingKPIs);
+    
+    setFormData(prev => ({
+      ...prev,
+      bsc_perspective: newPerspective,
+      kpi_id: newKpiId,
+    }));
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -64,7 +133,10 @@ export default function NewKPIPage() {
       router.push(`/kpi/${response.data.id}`);
     } catch (error: any) {
       console.error('Error creating KPI:', error);
-      alert(error.response?.data?.error || '創建 KPI 失敗');
+      const errorMsg = error.response?.data?.errors?.join('\n') || 
+                       error.response?.data?.error || 
+                       '創建 KPI 失敗';
+      alert(errorMsg);
     } finally {
       setLoading(false);
     }
@@ -87,7 +159,7 @@ export default function NewKPIPage() {
         <nav className="mb-6">
           <div className="flex items-center space-x-2 text-sm text-gray-600">
             <Link href="/kpi" className="hover:text-gray-900">
-              KPI Registry
+              持續且重要目標
             </Link>
             <span>/</span>
             <span className="text-gray-900">新增 KPI</span>
@@ -109,11 +181,12 @@ export default function NewKPIPage() {
                 type="text"
                 name="kpi_id"
                 value={formData.kpi_id}
-                onChange={handleInputChange}
-                required
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="例如: KPI-001"
+                readOnly
+                className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-100 text-gray-700 cursor-not-allowed"
               />
+              <p className="mt-1 text-xs text-gray-500">
+                系統自動生成（F=財務, C=客戶, I=內部流程, L=學習成長）
+              </p>
             </div>
 
             <div className="grid grid-cols-2 gap-4">
@@ -153,7 +226,7 @@ export default function NewKPIPage() {
                 <select
                   name="bsc_perspective"
                   value={formData.bsc_perspective}
-                  onChange={handleInputChange}
+                  onChange={handlePerspectiveChange}
                   required
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >

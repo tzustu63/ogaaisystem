@@ -9,11 +9,12 @@ router.get('/task/:id/up', authenticate, async (req: AuthRequest, res: Response)
   try {
     const { id } = req.params;
 
-    // 取得任務資訊
+    // 取得任務資訊（包含 KR 引用的 KPI）
     const taskResult = await pool.query(
       `SELECT t.*, 
               i.id as initiative_id, i.name_zh as initiative_name,
-              kr.id as kr_id, kr.description as kr_description,
+              kr.id as kr_id, kr.description as kr_description, 
+              kr.kr_type, kr.kpi_id as kr_kpi_id,
               o.id as okr_id, o.objective as okr_objective
        FROM tasks t
        LEFT JOIN initiatives i ON t.initiative_id = i.id
@@ -46,8 +47,28 @@ router.get('/task/:id/up', authenticate, async (req: AuthRequest, res: Response)
         id: task.kr_id,
         name: task.kr_description,
         type: 'key_result',
+        kr_type: task.kr_type,
         url: `/okr?kr=${task.kr_id}`,
       });
+
+      // 2.1 如果 KR 是 KPI 類型，加入 KR 關聯的 KPI
+      if (task.kr_type === 'kpi_based' && task.kr_kpi_id) {
+        const krKpiResult = await pool.query(
+          'SELECT * FROM kpi_registry WHERE id = $1',
+          [task.kr_kpi_id]
+        );
+        if (krKpiResult.rows.length > 0) {
+          const kpi = krKpiResult.rows[0];
+          path.push({
+            level: 'kpi',
+            id: kpi.id,
+            name: kpi.name_zh,
+            type: 'kpi',
+            source: 'kr_reference', // 標記來源是 KR 引用
+            url: `/kpi/${kpi.id}`,
+          });
+        }
+      }
 
       // 3. 關聯的 OKR
       if (task.okr_id) {
@@ -94,22 +115,27 @@ router.get('/task/:id/up', authenticate, async (req: AuthRequest, res: Response)
       }
     }
 
-    // 6. 影響的 KPI
+    // 6. Task 直接影響的 KPI（保留向後相容）
     if (task.kpi_id) {
-      const kpiResult = await pool.query(
-        'SELECT * FROM kpi_registry WHERE id = $1',
-        [task.kpi_id]
-      );
+      // 檢查是否已透過 KR 加入相同的 KPI
+      const alreadyAdded = path.some(p => p.type === 'kpi' && p.id === task.kpi_id);
+      if (!alreadyAdded) {
+        const kpiResult = await pool.query(
+          'SELECT * FROM kpi_registry WHERE id = $1',
+          [task.kpi_id]
+        );
 
-      if (kpiResult.rows.length > 0) {
-        const kpi = kpiResult.rows[0];
-        path.push({
-          level: 'kpi',
-          id: kpi.id,
-          name: kpi.name_zh,
-          type: 'kpi',
-          url: `/kpi/${kpi.id}`,
-        });
+        if (kpiResult.rows.length > 0) {
+          const kpi = kpiResult.rows[0];
+          path.push({
+            level: 'kpi',
+            id: kpi.id,
+            name: kpi.name_zh,
+            type: 'kpi',
+            source: 'task_direct', // 標記來源是 Task 直接關聯
+            url: `/kpi/${kpi.id}`,
+          });
+        }
       }
     }
 
@@ -132,8 +158,6 @@ router.get('/kpi/:id/down', authenticate, async (req: AuthRequest, res: Response
   try {
     const { id } = req.params;
 
-    const path: any[] = [];
-
     // 1. KPI 本身
     const kpiResult = await pool.query(
       'SELECT * FROM kpi_registry WHERE id = $1',
@@ -145,15 +169,23 @@ router.get('/kpi/:id/down', authenticate, async (req: AuthRequest, res: Response
     }
 
     const kpi = kpiResult.rows[0];
-    path.push({
-      level: 'kpi',
-      id: kpi.id,
-      name: kpi.name_zh,
-      type: 'kpi',
-      url: `/kpi/${kpi.id}`,
-    });
 
-    // 2. 關聯的 Initiatives
+    // 結構化的下鑽路徑
+    const drillDown = {
+      kpi: {
+        id: kpi.id,
+        kpi_id: kpi.kpi_id,
+        name: kpi.name_zh,
+        bsc_perspective: kpi.bsc_perspective,
+        url: `/kpi/${kpi.id}`,
+      },
+      initiatives: [] as any[],
+      okrs: [] as any[],
+      key_results: [] as any[],
+      tasks: [] as any[],
+    };
+
+    // 2. 透過 initiative_kpis 關聯的 Initiatives
     const initiativesResult = await pool.query(
       `SELECT i.*
        FROM initiatives i
@@ -163,17 +195,48 @@ router.get('/kpi/:id/down', authenticate, async (req: AuthRequest, res: Response
     );
 
     initiativesResult.rows.forEach((initiative) => {
-      path.push({
-        level: 'initiative',
+      drillDown.initiatives.push({
         id: initiative.id,
+        initiative_id: initiative.initiative_id,
         name: initiative.name_zh,
-        type: 'initiative',
+        status: initiative.status,
+        source: 'initiative_kpis',
         url: `/initiatives/${initiative.id}`,
       });
     });
 
-    // 3. 關聯的 OKRs
-    const okrsResult = await pool.query(
+    // 3. 透過 KR 引用此 KPI 的 OKRs（新增：整合後的追蹤方式）
+    const okrsByKRResult = await pool.query(
+      `SELECT DISTINCT o.*, kr.id as kr_id, kr.description as kr_description, kr.progress_percentage
+       FROM okrs o
+       INNER JOIN key_results kr ON o.id = kr.okr_id
+       WHERE kr.kr_type = 'kpi_based' AND kr.kpi_id = $1`,
+      [id]
+    );
+
+    okrsByKRResult.rows.forEach((row) => {
+      // 添加 OKR（避免重複）
+      if (!drillDown.okrs.some(o => o.id === row.id)) {
+        drillDown.okrs.push({
+          id: row.id,
+          objective: row.objective,
+          quarter: row.quarter,
+          source: 'kr_kpi_reference',
+          url: `/okr/${row.id}`,
+        });
+      }
+      // 添加 Key Result
+      drillDown.key_results.push({
+        id: row.kr_id,
+        description: row.kr_description,
+        progress_percentage: row.progress_percentage,
+        okr_id: row.id,
+        source: 'kpi_based',
+      });
+    });
+
+    // 4. 透過 Task 直接關聯的 OKRs（向後相容）
+    const okrsByTaskResult = await pool.query(
       `SELECT DISTINCT o.*
        FROM okrs o
        INNER JOIN key_results kr ON o.id = kr.okr_id
@@ -182,37 +245,74 @@ router.get('/kpi/:id/down', authenticate, async (req: AuthRequest, res: Response
       [id]
     );
 
-    okrsResult.rows.forEach((okr) => {
-      path.push({
-        level: 'okr',
-        id: okr.id,
-        name: okr.objective,
-        type: 'okr',
-        url: `/okr?okr=${okr.id}`,
+    okrsByTaskResult.rows.forEach((okr) => {
+      if (!drillDown.okrs.some(o => o.id === okr.id)) {
+        drillDown.okrs.push({
+          id: okr.id,
+          objective: okr.objective,
+          quarter: okr.quarter,
+          source: 'task_kpi_direct',
+          url: `/okr/${okr.id}`,
+        });
+      }
+    });
+
+    // 5. 透過 KR 引用此 KPI 的 Tasks
+    const tasksByKRResult = await pool.query(
+      `SELECT t.*, kr.description as kr_description
+       FROM tasks t
+       INNER JOIN key_results kr ON t.kr_id = kr.id
+       WHERE kr.kr_type = 'kpi_based' AND kr.kpi_id = $1`,
+      [id]
+    );
+
+    tasksByKRResult.rows.forEach((task) => {
+      drillDown.tasks.push({
+        id: task.id,
+        title: task.title,
+        status: task.status,
+        kr_description: task.kr_description,
+        source: 'kr_kpi_reference',
+        url: `/kanban?task=${task.id}`,
       });
     });
 
-    // 4. 關聯的任務
-    const tasksResult = await pool.query(
+    // 6. 直接關聯此 KPI 的 Tasks（向後相容）
+    const tasksDirectResult = await pool.query(
       `SELECT t.*
        FROM tasks t
        WHERE t.kpi_id = $1`,
       [id]
     );
 
-    tasksResult.rows.forEach((task) => {
-      path.push({
-        level: 'task',
-        id: task.id,
-        name: task.title,
-        type: 'task',
-        url: `/kanban?task=${task.id}`,
-      });
+    tasksDirectResult.rows.forEach((task) => {
+      if (!drillDown.tasks.some(t => t.id === task.id)) {
+        drillDown.tasks.push({
+          id: task.id,
+          title: task.title,
+          status: task.status,
+          source: 'task_direct',
+          url: `/kanban?task=${task.id}`,
+        });
+      }
     });
+
+    // 統計摘要
+    const summary = {
+      total_initiatives: drillDown.initiatives.length,
+      total_okrs: drillDown.okrs.length,
+      total_key_results: drillDown.key_results.length,
+      total_tasks: drillDown.tasks.length,
+      tasks_completed: drillDown.tasks.filter(t => t.status === 'done').length,
+      avg_kr_progress: drillDown.key_results.length > 0
+        ? drillDown.key_results.reduce((sum, kr) => sum + (parseFloat(kr.progress_percentage) || 0), 0) / drillDown.key_results.length
+        : 0,
+    };
 
     res.json({
       kpi_id: id,
-      path_down: path,
+      drill_down: drillDown,
+      summary,
     });
   } catch (error: unknown) {
     console.error('Error fetching trace down path:', error);

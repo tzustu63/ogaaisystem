@@ -177,7 +177,7 @@ export default function InitiativeDetailPage() {
   }
 
   if (!initiative) {
-    return <div className="p-8">Initiative 不存在</div>;
+    return <div className="p-8">策略專案不存在</div>;
   }
 
   return (

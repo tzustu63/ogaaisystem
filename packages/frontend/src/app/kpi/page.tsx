@@ -61,7 +61,7 @@ export default function KPIPage() {
     <div className="p-8">
       <div className="max-w-7xl mx-auto">
         <div className="flex justify-between items-center mb-6">
-          <h1 className="text-3xl font-bold">KPI Registry</h1>
+          <h1 className="text-3xl font-bold">持續且重要目標</h1>
           <Link
             href="/kpi/new"
             className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"

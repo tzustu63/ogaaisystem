@@ -1,24 +1,30 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { initiativeApi, bscApi, kpiApi } from '@/lib/api';
+import api from '@/lib/api';
 import Link from 'next/link';
 
 interface InitiativeFormData {
   initiative_id: string;
   name_zh: string;
   name_en: string;
-  initiative_type: 'policy_response' | 'ranking_improvement' | 'risk_control' | 'innovation';
+  initiative_type: string;
   status: 'planning' | 'in_progress' | 'completed' | 'cancelled';
   risk_level?: 'high' | 'medium' | 'low';
   start_date: string;
   end_date: string;
   budget: number;
   responsible_unit: string;
+  primary_owner: string;
+  co_owners: string[];
+  funding_sources: string[];
+  related_indicators: string[];
+  bsc_perspective: string;
   bsc_objective_ids: string[];
   kpi_ids: string[];
-  program_tags: string[];
+  notes: string;
 }
 
 interface BscObjective {
@@ -26,6 +32,7 @@ interface BscObjective {
   objective_id: string;
   name_zh: string;
   name_en?: string;
+  perspective?: string;
 }
 
 interface KPI {
@@ -35,6 +42,19 @@ interface KPI {
   name_en?: string;
 }
 
+interface SystemOption {
+  id: string;
+  value: string;
+  label: string;
+}
+
+const BSC_PERSPECTIVES = [
+  { value: 'financial', label: '財務構面' },
+  { value: 'customer', label: '客戶構面' },
+  { value: 'internal_process', label: '內部流程構面' },
+  { value: 'learning_growth', label: '學習成長構面' },
+];
+
 export default function NewInitiativePage() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
@@ -42,40 +62,72 @@ export default function NewInitiativePage() {
   const [kpis, setKpis] = useState<KPI[]>([]);
   const [loadingOptions, setLoadingOptions] = useState(true);
   
+  // 系統選項
+  const [initiativeTypes, setInitiativeTypes] = useState<SystemOption[]>([]);
+  const [departments, setDepartments] = useState<SystemOption[]>([]);
+  const [persons, setPersons] = useState<SystemOption[]>([]);
+  const [fundingSources, setFundingSources] = useState<SystemOption[]>([]);
+  const [indicators, setIndicators] = useState<SystemOption[]>([]);
+  
   const [formData, setFormData] = useState<InitiativeFormData>({
     initiative_id: '',
     name_zh: '',
     name_en: '',
-    initiative_type: 'policy_response',
+    initiative_type: '',
     status: 'planning',
     risk_level: undefined,
     start_date: '',
     end_date: '',
     budget: 0,
     responsible_unit: '',
+    primary_owner: '',
+    co_owners: [],
+    funding_sources: [],
+    related_indicators: [],
+    bsc_perspective: '',
     bsc_objective_ids: [],
     kpi_ids: [],
-    program_tags: [],
+    notes: '',
   });
 
+  // 取得下一個專案編號
+  const fetchNextInitiativeId = useCallback(async () => {
+    try {
+      const res = await api.get('/system-options/next-initiative-id');
+      setFormData(prev => ({ ...prev, initiative_id: res.data.next_id }));
+    } catch (error) {
+      console.error('Error fetching next initiative ID:', error);
+    }
+  }, []);
+
   useEffect(() => {
-    // 載入 BSC 目標和 KPI 列表
+    // 載入所有選項
     Promise.all([
       bscApi.getObjectives().then((res) => setBscObjectives(res.data)),
       kpiApi.getAll().then((res) => setKpis(res.data)),
+      api.get('/system-options/category/initiative_type').then((res) => setInitiativeTypes(res.data)),
+      api.get('/system-options/category/department').then((res) => setDepartments(res.data)),
+      api.get('/system-options/category/person').then((res) => setPersons(res.data)),
+      api.get('/system-options/category/funding_source').then((res) => setFundingSources(res.data)),
+      api.get('/system-options/category/indicator').then((res) => setIndicators(res.data)),
+      fetchNextInitiativeId(),
     ])
       .catch((err) => {
         console.error('Error loading options:', err);
-        alert('載入選項失敗');
       })
       .finally(() => setLoadingOptions(false));
-  }, []);
+  }, [fetchNextInitiativeId]);
+
+  // 根據 BSC 構面篩選目標
+  const filteredBscObjectives = formData.bsc_perspective
+    ? bscObjectives.filter(obj => obj.perspective === formData.bsc_perspective)
+    : bscObjectives;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (formData.bsc_objective_ids.length === 0) {
-      alert('請至少選擇一個 BSC 目標');
+    if (!formData.bsc_perspective) {
+      alert('請選擇 BSC 目標關聯');
       return;
     }
 
@@ -90,11 +142,13 @@ export default function NewInitiativePage() {
         end_date: formData.end_date || undefined,
         name_en: formData.name_en || undefined,
         kpi_ids: formData.kpi_ids.length > 0 ? formData.kpi_ids : undefined,
-        program_tags: formData.program_tags.length > 0 ? formData.program_tags : undefined,
+        co_owners: formData.co_owners.length > 0 ? formData.co_owners : undefined,
+        funding_sources: formData.funding_sources.length > 0 ? formData.funding_sources : undefined,
+        related_indicators: formData.related_indicators.length > 0 ? formData.related_indicators : undefined,
+        notes: formData.notes || undefined,
       };
       
       const response = await initiativeApi.create(submitData);
-      // 創建成功後重定向到 Initiative 詳情頁
       router.push(`/initiatives/${response.data.id}`);
     } catch (error: any) {
       console.error('Error creating initiative:', error);
@@ -114,32 +168,16 @@ export default function NewInitiativePage() {
     }));
   };
 
-  const handleCheckboxChange = (
-    field: 'bsc_objective_ids' | 'kpi_ids',
-    id: string,
+  const handleMultiSelectChange = (
+    field: 'co_owners' | 'funding_sources' | 'related_indicators' | 'kpi_ids' | 'bsc_objective_ids',
+    value: string,
     checked: boolean
   ) => {
     setFormData((prev) => ({
       ...prev,
       [field]: checked
-        ? [...prev[field], id]
-        : prev[field].filter((item) => item !== id),
-    }));
-  };
-
-  const handleProgramTagAdd = (tag: string) => {
-    if (tag.trim() && !formData.program_tags.includes(tag.trim())) {
-      setFormData((prev) => ({
-        ...prev,
-        program_tags: [...prev.program_tags, tag.trim()],
-      }));
-    }
-  };
-
-  const handleProgramTagRemove = (tag: string) => {
-    setFormData((prev) => ({
-      ...prev,
-      program_tags: prev.program_tags.filter((t) => t !== tag),
+        ? [...prev[field], value]
+        : prev[field].filter((item) => item !== value),
     }));
   };
 
@@ -163,7 +201,7 @@ export default function NewInitiativePage() {
               策略專案
             </Link>
             <span>/</span>
-            <span className="text-gray-900">新增專案</span>
+            <span className="text-gray-900">新增策略專案</span>
           </div>
         </nav>
 
@@ -174,19 +212,45 @@ export default function NewInitiativePage() {
           <div className="space-y-4">
             <h2 className="text-lg font-semibold border-b pb-2">基本資訊</h2>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                專案編號 <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="text"
-                name="initiative_id"
-                value={formData.initiative_id}
-                onChange={handleInputChange}
-                required
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="例如: INIT-001"
-              />
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  專案編號
+                </label>
+                <input
+                  type="text"
+                  name="initiative_id"
+                  value={formData.initiative_id}
+                  readOnly
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-100 cursor-not-allowed"
+                />
+                <p className="text-xs text-gray-500 mt-1">系統自動產生</p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  專案類型 <span className="text-red-500">*</span>
+                </label>
+                <select
+                  name="initiative_type"
+                  value={formData.initiative_type}
+                  onChange={handleInputChange}
+                  required
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">請選擇</option>
+                  {initiativeTypes.map((type) => (
+                    <option key={type.id} value={type.value}>
+                      {type.label}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-xs text-gray-500 mt-1">
+                  <Link href="/settings/options" className="text-blue-600 hover:underline">
+                    管理選項
+                  </Link>
+                </p>
+              </div>
             </div>
 
             <div className="grid grid-cols-2 gap-4">
@@ -221,24 +285,6 @@ export default function NewInitiativePage() {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  專案類型 <span className="text-red-500">*</span>
-                </label>
-                <select
-                  name="initiative_type"
-                  value={formData.initiative_type}
-                  onChange={handleInputChange}
-                  required
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="policy_response">政策回應</option>
-                  <option value="ranking_improvement">排名改善</option>
-                  <option value="risk_control">風險控制</option>
-                  <option value="innovation">創新</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
                   狀態 <span className="text-red-500">*</span>
                 </label>
                 <select
@@ -254,9 +300,7 @@ export default function NewInitiativePage() {
                   <option value="cancelled">已取消</option>
                 </select>
               </div>
-            </div>
 
-            <div className="grid grid-cols-3 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   風險等級
@@ -278,7 +322,9 @@ export default function NewInitiativePage() {
                   <option value="high">高</option>
                 </select>
               </div>
+            </div>
 
+            <div className="grid grid-cols-3 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   開始日期
@@ -304,9 +350,7 @@ export default function NewInitiativePage() {
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
-            </div>
 
-            <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   預算
@@ -326,19 +370,120 @@ export default function NewInitiativePage() {
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
+            </div>
+          </div>
 
+          {/* 負責單位與人員 */}
+          <div className="space-y-4">
+            <h2 className="text-lg font-semibold border-b pb-2">負責單位與人員</h2>
+
+            <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   負責單位 <span className="text-red-500">*</span>
                 </label>
-                <input
-                  type="text"
+                <select
                   name="responsible_unit"
                   value={formData.responsible_unit}
                   onChange={handleInputChange}
                   required
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
+                >
+                  <option value="">請選擇</option>
+                  {departments.map((dept) => (
+                    <option key={dept.id} value={dept.value}>
+                      {dept.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  主要負責人 <span className="text-red-500">*</span>
+                </label>
+                <select
+                  name="primary_owner"
+                  value={formData.primary_owner}
+                  onChange={handleInputChange}
+                  required
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">請選擇</option>
+                  {persons.map((person) => (
+                    <option key={person.id} value={person.value}>
+                      {person.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                共同負責人（可多選）
+              </label>
+              <div className="max-h-40 overflow-y-auto border border-gray-200 rounded p-3 grid grid-cols-3 gap-2">
+                {persons.map((person) => (
+                  <label key={person.id} className="flex items-center space-x-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={formData.co_owners.includes(person.value)}
+                      onChange={(e) =>
+                        handleMultiSelectChange('co_owners', person.value, e.target.checked)
+                      }
+                      className="rounded"
+                    />
+                    <span className="text-sm">{person.label}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* 經費與指標 */}
+          <div className="space-y-4">
+            <h2 className="text-lg font-semibold border-b pb-2">經費來源與對應指標</h2>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                經費來源（可多選）
+              </label>
+              <div className="max-h-40 overflow-y-auto border border-gray-200 rounded p-3 grid grid-cols-3 gap-2">
+                {fundingSources.map((source) => (
+                  <label key={source.id} className="flex items-center space-x-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={formData.funding_sources.includes(source.value)}
+                      onChange={(e) =>
+                        handleMultiSelectChange('funding_sources', source.value, e.target.checked)
+                      }
+                      className="rounded"
+                    />
+                    <span className="text-sm">{source.label}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                對應指標（可多選）
+              </label>
+              <div className="max-h-40 overflow-y-auto border border-gray-200 rounded p-3 grid grid-cols-3 gap-2">
+                {indicators.map((indicator) => (
+                  <label key={indicator.id} className="flex items-center space-x-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={formData.related_indicators.includes(indicator.value)}
+                      onChange={(e) =>
+                        handleMultiSelectChange('related_indicators', indicator.value, e.target.checked)
+                      }
+                      className="rounded"
+                    />
+                    <span className="text-sm">{indicator.label}</span>
+                  </label>
+                ))}
               </div>
             </div>
           </div>
@@ -348,42 +493,67 @@ export default function NewInitiativePage() {
             <h2 className="text-lg font-semibold border-b pb-2">
               BSC 目標關聯 <span className="text-red-500">*</span>
             </h2>
-            <div className="max-h-60 overflow-y-auto border border-gray-200 rounded p-4">
-              {bscObjectives.length === 0 ? (
-                <p className="text-gray-500">沒有可用的 BSC 目標</p>
-              ) : (
-                bscObjectives.map((objective) => (
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                選擇 BSC 構面（四選一）
+              </label>
+              <div className="grid grid-cols-4 gap-2">
+                {BSC_PERSPECTIVES.map((perspective) => (
                   <label
-                    key={objective.id}
-                    className="flex items-center space-x-2 py-2 hover:bg-gray-50 px-2 rounded cursor-pointer"
+                    key={perspective.value}
+                    className={`flex items-center justify-center p-3 border rounded-lg cursor-pointer transition-colors ${
+                      formData.bsc_perspective === perspective.value
+                        ? 'border-blue-500 bg-blue-50 text-blue-700'
+                        : 'border-gray-200 hover:bg-gray-50'
+                    }`}
                   >
                     <input
-                      type="checkbox"
-                      checked={formData.bsc_objective_ids.includes(objective.id)}
-                      onChange={(e) =>
-                        handleCheckboxChange('bsc_objective_ids', objective.id, e.target.checked)
-                      }
-                      className="rounded"
+                      type="radio"
+                      name="bsc_perspective"
+                      value={perspective.value}
+                      checked={formData.bsc_perspective === perspective.value}
+                      onChange={handleInputChange}
+                      className="sr-only"
                     />
-                    <span className="flex-1">
-                      {objective.name_zh}
-                      {objective.name_en && (
-                        <span className="text-gray-500 ml-2">({objective.name_en})</span>
-                      )}
-                    </span>
-                    <span className="text-xs text-gray-400">{objective.objective_id}</span>
+                    <span className="text-sm font-medium">{perspective.label}</span>
                   </label>
-                ))
-              )}
+                ))}
+              </div>
             </div>
-            {formData.bsc_objective_ids.length === 0 && (
-              <p className="text-sm text-red-500">請至少選擇一個 BSC 目標</p>
+
+            {formData.bsc_perspective && filteredBscObjectives.length > 0 && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  選擇具體目標（可多選）
+                </label>
+                <div className="max-h-40 overflow-y-auto border border-gray-200 rounded p-3">
+                  {filteredBscObjectives.map((objective) => (
+                    <label
+                      key={objective.id}
+                      className="flex items-center space-x-2 py-2 hover:bg-gray-50 px-2 rounded cursor-pointer"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={formData.bsc_objective_ids.includes(objective.id)}
+                        onChange={(e) =>
+                          handleMultiSelectChange('bsc_objective_ids', objective.id, e.target.checked)
+                        }
+                        className="rounded"
+                      />
+                      <span className="flex-1">{objective.name_zh}</span>
+                      <span className="text-xs text-gray-400">{objective.objective_id}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
             )}
           </div>
 
           {/* KPI 關聯 */}
           <div className="space-y-4">
             <h2 className="text-lg font-semibold border-b pb-2">KPI 關聯（選填）</h2>
+            <p className="text-sm text-gray-500">可在此處設定，或在「持續且重要目標」中設定關聯到策略專案</p>
             <div className="max-h-60 overflow-y-auto border border-gray-200 rounded p-4">
               {kpis.length === 0 ? (
                 <p className="text-gray-500">沒有可用的 KPI</p>
@@ -397,7 +567,7 @@ export default function NewInitiativePage() {
                       type="checkbox"
                       checked={formData.kpi_ids.includes(kpi.id)}
                       onChange={(e) =>
-                        handleCheckboxChange('kpi_ids', kpi.id, e.target.checked)
+                        handleMultiSelectChange('kpi_ids', kpi.id, e.target.checked)
                       }
                       className="rounded"
                     />
@@ -414,40 +584,17 @@ export default function NewInitiativePage() {
             </div>
           </div>
 
-          {/* 適用計畫標籤 */}
+          {/* 備註 */}
           <div className="space-y-4">
-            <h2 className="text-lg font-semibold border-b pb-2">適用計畫標籤（選填）</h2>
-            <div className="flex flex-wrap gap-2 mb-2">
-              {formData.program_tags.map((tag) => (
-                <span
-                  key={tag}
-                  className="inline-flex items-center px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm"
-                >
-                  {tag}
-                  <button
-                    type="button"
-                    onClick={() => handleProgramTagRemove(tag)}
-                    className="ml-2 text-blue-600 hover:text-blue-800"
-                  >
-                    ×
-                  </button>
-                </span>
-              ))}
-            </div>
-            <div className="flex space-x-2">
-              <input
-                type="text"
-                placeholder="輸入計畫標籤並按 Enter"
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    handleProgramTagAdd(e.currentTarget.value);
-                    e.currentTarget.value = '';
-                  }
-                }}
-                className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
+            <h2 className="text-lg font-semibold border-b pb-2">備註（選填）</h2>
+            <textarea
+              name="notes"
+              value={formData.notes}
+              onChange={handleInputChange}
+              rows={4}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="輸入備註..."
+            />
           </div>
 
           {/* 操作按鈕 */}
@@ -460,7 +607,7 @@ export default function NewInitiativePage() {
             </Link>
             <button
               type="submit"
-              disabled={loading || formData.bsc_objective_ids.length === 0}
+              disabled={loading || !formData.bsc_perspective}
               className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {loading ? '創建中...' : '創建專案'}

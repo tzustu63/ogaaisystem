@@ -48,6 +48,7 @@ import userRoutes from './routes/users';
 import settingsRoutes from './routes/settings';
 import authRoutes from './routes/auth';
 import uploadRoutes from './routes/upload';
+import systemOptionsRoutes from './routes/system-options';
 import { startSchedulers } from './cron/scheduler';
 import { initializeDefaultTemplates } from './services/raci-templates';
 import { pool } from './config/database';
@@ -79,6 +80,7 @@ app.use('/api/data-quality', dataQualityRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/upload', uploadRoutes);
+app.use('/api/system-options', systemOptionsRoutes);
 
 // 初始化預設 RACI 模板
 initializeDefaultTemplates(pool).catch(console.error);

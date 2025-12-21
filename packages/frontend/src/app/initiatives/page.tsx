@@ -70,12 +70,12 @@ export default function InitiativesPage() {
     <div className="p-8">
       <div className="max-w-7xl mx-auto">
         <div className="flex justify-between items-center mb-6">
-          <h1 className="text-3xl font-bold">策略專案 (Initiatives)</h1>
+          <h1 className="text-3xl font-bold">策略專案</h1>
           <Link
             href="/initiatives/new"
             className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
           >
-            新增專案
+            新增策略專案
           </Link>
         </div>
 
