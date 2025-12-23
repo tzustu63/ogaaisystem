@@ -11,11 +11,11 @@ export default function Home() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           <Link href="/dashboard" className="p-6 bg-white rounded-lg shadow hover:shadow-lg transition">
             <h2 className="text-2xl font-semibold mb-2">📊 戰略儀表板</h2>
-            <p className="text-gray-600">查看 BSC 四構面總覽與 KPI 狀態</p>
+            <p className="text-gray-600">查看數據總覽與 KPI 狀態</p>
           </Link>
           
           <Link href="/kpi" className="p-6 bg-white rounded-lg shadow hover:shadow-lg transition">
-            <h2 className="text-2xl font-semibold mb-2">📈 持續且重要目標</h2>
+            <h2 className="text-2xl font-semibold mb-2">📈 KPI</h2>
             <p className="text-gray-600">管理指標字典與定義</p>
           </Link>
           

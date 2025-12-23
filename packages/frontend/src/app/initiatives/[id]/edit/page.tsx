@@ -497,7 +497,7 @@ export default function EditInitiativePage() {
           {/* KPI 關聯 */}
           <div className="space-y-4">
             <h2 className="text-lg font-semibold border-b pb-2">KPI 關聯（選填）</h2>
-            <p className="text-sm text-gray-500">可在此處設定，或在「持續且重要目標」中設定關聯到策略專案</p>
+            <p className="text-sm text-gray-500">可在此處設定，或在「KPI」中設定關聯到策略專案</p>
             <div className="max-h-60 overflow-y-auto border border-gray-200 rounded p-4">
               {kpis.length === 0 ? (
                 <p className="text-gray-500">沒有可用的 KPI</p>

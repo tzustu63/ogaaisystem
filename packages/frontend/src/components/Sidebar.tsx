@@ -16,8 +16,8 @@ const menuItems: MenuItem[] = [
     title: '📊 戰略儀表板',
     href: '/dashboard',
     children: [
-      { title: 'BSC 四構面總覽', href: '/dashboard' },
-      { title: '持續且重要目標', href: '/kpi' },
+      { title: '數據總覽', href: '/dashboard' },
+      { title: 'KPI', href: '/kpi' },
     ],
   },
   {
@@ -125,10 +125,11 @@ export default function Sidebar() {
       setHasToken(!!token);
       if (!token) {
         setLoading(false);
+        setCurrentUser(null);
         return;
       }
       
-      // 嘗試從 localStorage 讀取保存的用戶資訊
+      // 嘗試從 localStorage 讀取保存的用戶資訊（先顯示緩存的用戶資訊）
       const savedUserStr = localStorage.getItem('currentUser');
       if (savedUserStr) {
         try {
@@ -139,31 +140,40 @@ export default function Sidebar() {
         }
       }
       
-      const res = await authApi.getMe();
-      const userData = res.data.user || res.data;
-      const user = {
-        id: userData.id,
-        username: userData.username,
-        email: userData.email,
-        fullName: userData.full_name || userData.fullName,
-        roles: userData.roles || [],
-      };
-      
-      // 保存用戶資訊到 localStorage
-      localStorage.setItem('currentUser', JSON.stringify(user));
-      setCurrentUser(user);
-    } catch (error) {
-      console.error('Error fetching current user:', error);
-      // 如果 API 失敗，嘗試使用保存的用戶資訊
-      const savedUserStr = localStorage.getItem('currentUser');
-      if (savedUserStr) {
-        try {
-          const savedUser = JSON.parse(savedUserStr);
-          setCurrentUser(savedUser);
-        } catch (e) {
-          // 解析失敗，保持 currentUser 為 null
+      // 嘗試從 API 獲取最新的用戶資訊
+      try {
+        const res = await authApi.getMe();
+        const userData = res.data.user || res.data;
+        const user = {
+          id: userData.id,
+          username: userData.username,
+          email: userData.email,
+          fullName: userData.full_name || userData.fullName,
+          roles: userData.roles || [],
+        };
+        
+        // 保存用戶資訊到 localStorage
+        localStorage.setItem('currentUser', JSON.stringify(user));
+        setCurrentUser(user);
+      } catch (apiError: any) {
+        console.error('Error fetching current user from API:', apiError);
+        // 如果 API 返回 401，說明 token 無效，清除 token 和用戶資訊
+        if (apiError.response?.status === 401) {
+          localStorage.removeItem('token');
+          localStorage.removeItem('currentUser');
+          setHasToken(false);
+          setCurrentUser(null);
+        } else {
+          // 其他錯誤，保留緩存的用戶資訊（如果有的話）
+          // 如果沒有緩存的用戶資訊，保持 currentUser 為 null
+          if (!savedUserStr) {
+            setCurrentUser(null);
+          }
         }
       }
+    } catch (error) {
+      console.error('Error in fetchCurrentUser:', error);
+      setCurrentUser(null);
     } finally {
       setLoading(false);
     }

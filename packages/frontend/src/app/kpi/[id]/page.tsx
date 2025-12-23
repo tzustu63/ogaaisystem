@@ -265,7 +265,7 @@ export default function KPIDetailPage() {
             </Link>
             <span>/</span>
             <Link href="/kpi" className="hover:text-gray-900">
-              持續且重要目標
+              KPI
             </Link>
             <span>/</span>
             <span className="text-gray-900">{kpi.name_zh}</span>

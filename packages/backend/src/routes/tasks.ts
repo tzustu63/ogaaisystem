@@ -18,7 +18,6 @@ async function updateKRProgressFromTasks(krId: string) {
     }
 
     const targetValue = parseFloat(krResult.rows[0].target_value) || 0;
-    const unit = krResult.rows[0].unit || '';
 
     // 加總所有已完成任務的貢獻值
     const tasksResult = await pool.query(
@@ -38,20 +37,26 @@ async function updateKRProgressFromTasks(krId: string) {
     // 限制進度在 0-100 之間
     const finalProgress = Math.max(0, Math.min(100, progress));
 
+    // 根據進度計算狀態
+    let status = 'not_started';
+    if (finalProgress >= 100) {
+      status = 'completed';
+    } else if (finalProgress > 0) {
+      status = 'in_progress';
+    }
+
     // 更新 Key Result
     await pool.query(
       `UPDATE key_results 
        SET current_value = $1, 
            progress_percentage = $2, 
-           status = CASE 
-             WHEN $2 >= 100 THEN 'completed'
-             WHEN $2 > 0 THEN 'in_progress'
-             ELSE 'not_started'
-           END,
+           status = $3,
            updated_at = CURRENT_TIMESTAMP
-       WHERE id = $3`,
-      [totalContribution, finalProgress, krId]
+       WHERE id = $4`,
+      [totalContribution, finalProgress, status, krId]
     );
+    
+    console.log(`Updated KR ${krId}: current_value=${totalContribution}, progress=${finalProgress}%, status=${status}`);
   } catch (error) {
     console.error('Error updating KR progress from tasks:', error);
     // 不拋出錯誤，避免影響主要操作

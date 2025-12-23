@@ -39,35 +39,27 @@ export default function TracePath({ taskId, kpiId, type }: TracePathProps) {
   }, [taskId, kpiId, type]);
 
   if (loading) {
-    return <div className="text-sm text-gray-500">載入路徑中...</div>;
+    return null; // 載入時不顯示，避免閃爍
   }
 
   if (path.length === 0) {
-    return <div className="text-sm text-gray-500">無路徑資料</div>;
+    return null; // 無路徑時不顯示
   }
 
-  const getLevelLabel = (level: string) => {
-    const labels: Record<string, string> = {
-      task: '任務',
-      kr: '關鍵結果',
-      okr: 'OKR',
-      initiative: '策略專案',
-      kpi: 'KPI',
-    };
-    return labels[level] || level;
-  };
+  // 精簡顯示：只顯示最後兩層（KR 和 OKR 或策略專案）
+  const displayPath = path.length > 2 ? path.slice(-2) : path;
 
   return (
-    <div className="flex items-center space-x-2 text-sm">
-      {path.map((item, index) => (
-        <div key={index} className="flex items-center space-x-2">
+    <div className="flex items-center space-x-1 text-xs text-gray-600 flex-wrap">
+      {displayPath.map((item, index) => (
+        <div key={index} className="flex items-center space-x-1">
           {index > 0 && <span className="text-gray-400">→</span>}
           <Link
             href={item.url || '#'}
-            className="text-blue-600 hover:text-blue-900 hover:underline"
+            className="text-blue-600 hover:text-blue-900 hover:underline truncate max-w-[100px]"
+            title={item.name}
           >
-            <span className="text-xs text-gray-500">[{getLevelLabel(item.type)}]</span>{' '}
-            {item.name}
+            {item.name.length > 12 ? `${item.name.substring(0, 12)}...` : item.name}
           </Link>
         </div>
       ))}

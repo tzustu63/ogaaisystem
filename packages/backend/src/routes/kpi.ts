@@ -39,7 +39,17 @@ router.get('/', authenticate, async (req: AuthRequest, res) => {
                FROM kpi_values kv 
                WHERE kv.kpi_id = k.id 
                ORDER BY kv.period DESC 
-               LIMIT 1) as status
+               LIMIT 1) as status,
+              (SELECT kv.value 
+               FROM kpi_values kv 
+               WHERE kv.kpi_id = k.id 
+               ORDER BY kv.period DESC 
+               LIMIT 1) as latest_value,
+              (SELECT kv.target_value 
+               FROM kpi_values kv 
+               WHERE kv.kpi_id = k.id 
+               ORDER BY kv.period DESC 
+               LIMIT 1) as latest_target_value
        FROM kpi_registry k
        ORDER BY k.created_at DESC`
     );

@@ -89,8 +89,17 @@ export default function DashboardPage() {
     const topKpis = kpis.slice(0, 10);
     const kpiNames = topKpis.map((k) => k.name_zh);
     const achievementRates = topKpis.map((k) => {
-      // 簡化計算，實際應從 kpi_values 取得
-      return k.status === 'green' ? 100 : k.status === 'yellow' ? 70 : 50;
+      // 如果有實際值和目標值，計算真實達成率
+      if (k.latest_value !== null && k.latest_target_value !== null && k.latest_target_value > 0) {
+        const rate = (k.latest_value / k.latest_target_value) * 100;
+        return Math.min(100, Math.max(0, rate)); // 限制在 0-100 之間
+      }
+      // 如果沒有實際值，根據狀態顯示預設值（僅供參考）
+      // 這些值不代表真實達成率，只是視覺化狀態
+      if (k.status === 'green') return 100;
+      if (k.status === 'yellow') return 70;
+      // 對於 red 或無狀態，顯示 0 而不是 50，表示尚未有數據或未達標
+      return 0;
     });
 
     return {
@@ -152,14 +161,15 @@ export default function DashboardPage() {
             >
               OKR 進度
             </button>
-            <button
+            {/* 下鑽路徑按鈕已隱藏 */}
+            {/* <button
               onClick={() => setViewMode('drilldown')}
               className={`px-4 py-2 rounded ${
                 viewMode === 'drilldown' ? 'bg-primary-600 text-white' : 'bg-gray-200'
               }`}
             >
               下鑽路徑
-            </button>
+            </button> */}
           </div>
         </div>
 
@@ -390,8 +400,8 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* 視圖3：下鑽路徑 */}
-        {viewMode === 'drilldown' && (
+        {/* 視圖3：下鑽路徑 - 已隱藏 */}
+        {false && viewMode === 'drilldown' && (
           <div className="bg-white rounded-lg shadow p-6">
             <h2 className="text-xl font-semibold mb-4">下鑽路徑</h2>
             <p className="text-gray-600 mb-4">
@@ -400,7 +410,7 @@ export default function DashboardPage() {
             <div className="flex items-center justify-center space-x-2 text-sm bg-gray-50 p-4 rounded-lg mb-6">
               <span className="px-3 py-1 bg-red-100 text-red-800 rounded">BSC 構面</span>
               <span>→</span>
-              <span className="px-3 py-1 bg-yellow-100 text-yellow-800 rounded">KPI（持續且重要目標）</span>
+              <span className="px-3 py-1 bg-yellow-100 text-yellow-800 rounded">KPI</span>
               <span>→</span>
               <span className="px-3 py-1 bg-blue-100 text-blue-800 rounded">策略專案</span>
               <span>→</span>
@@ -410,7 +420,7 @@ export default function DashboardPage() {
             </div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <Link href="/kpi" className="block p-4 border rounded-lg hover:bg-gray-50 transition-colors">
-                <h3 className="font-medium text-lg mb-2">📈 持續且重要目標（KPI）</h3>
+                <h3 className="font-medium text-lg mb-2">📈 KPI</h3>
                 <p className="text-sm text-gray-600">查看所有 KPI 及其達成狀況（結果指標）</p>
                 <p className="text-primary-600 text-sm mt-2">共 {kpis.length} 個 KPI →</p>
               </Link>
@@ -427,78 +437,6 @@ export default function DashboardPage() {
             </div>
           </div>
         )}
-
-        {/* KPI 列表（所有視圖共用） */}
-        <div className="bg-white rounded-lg shadow mt-6">
-          <div className="p-6 border-b">
-            <h2 className="text-xl font-semibold">KPI 總覽</h2>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                    KPI ID
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                    名稱
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                    構面
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                    狀態
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                    操作
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {kpis.slice(0, 10).map((kpi) => (
-                  <tr key={kpi.id}>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                      {kpi.kpi_id}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm">
-                      {kpi.name_zh}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {(() => {
-                        const labels: Record<string, string> = {
-                          financial: '財務構面',
-                          customer: '客戶構面',
-                          internal_process: '內部流程構面',
-                          learning_growth: '學習成長構面',
-                        };
-                        return labels[kpi.bsc_perspective] || kpi.bsc_perspective;
-                      })()}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span
-                        className={`inline-block w-3 h-3 rounded-full ${
-                          kpi.status === 'green'
-                            ? 'bg-green-500'
-                            : kpi.status === 'yellow'
-                            ? 'bg-yellow-500'
-                            : 'bg-red-500'
-                        }`}
-                      />
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm">
-                      <Link
-                        href={`/kpi/${kpi.id}`}
-                        className="text-primary-600 hover:text-primary-900"
-                      >
-                        查看詳情
-                      </Link>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
       </div>
     </div>
   );

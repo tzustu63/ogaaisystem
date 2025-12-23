@@ -159,7 +159,7 @@ export default function NewKPIPage() {
         <nav className="mb-6">
           <div className="flex items-center space-x-2 text-sm text-gray-600">
             <Link href="/kpi" className="hover:text-gray-900">
-              持續且重要目標
+              KPI
             </Link>
             <span>/</span>
             <span className="text-gray-900">新增 KPI</span>

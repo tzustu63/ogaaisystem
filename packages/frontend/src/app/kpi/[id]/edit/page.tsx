@@ -267,7 +267,7 @@ export default function EditKPIPage() {
         <nav className="mb-6">
           <div className="flex items-center space-x-2 text-sm text-gray-600">
             <Link href="/kpi" className="hover:text-gray-900">
-              持續且重要目標
+              KPI
             </Link>
             <span>/</span>
             <Link href={`/kpi/${params.id}`} className="hover:text-gray-900">
@@ -278,7 +278,7 @@ export default function EditKPIPage() {
           </div>
         </nav>
 
-        <h1 className="text-2xl font-bold mb-6">編輯持續且重要目標</h1>
+        <h1 className="text-2xl font-bold mb-6">編輯 KPI</h1>
 
         <form onSubmit={handleSubmit} className="bg-white rounded-lg shadow p-6 space-y-6">
           {/* 基本資訊 */}

@@ -1,14 +1,15 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useParams } from 'next/navigation';
-import { pdcaApi, taskApi, userApi, kpiApi } from '@/lib/api';
+import { useParams, useRouter } from 'next/navigation';
+import { pdcaApi, taskApi, userApi, kpiApi, initiativeApi, okrApi } from '@/lib/api';
 import Link from 'next/link';
 
 interface PDCACycle {
   id: string;
   cycle_name: string;
   check_frequency: string;
+  responsible_user_id?: string;
   responsible_name?: string;
   initiative_id?: string;
   initiative_name?: string;
@@ -39,15 +40,32 @@ interface KPI {
 
 export default function PDCADetailPage() {
   const params = useParams();
+  const router = useRouter();
   const [cycle, setCycle] = useState<PDCACycle | null>(null);
   const [loading, setLoading] = useState(true);
   
   // 模態框狀態
+  const [showEditCycleModal, setShowEditCycleModal] = useState(false);
   const [showPlanModal, setShowPlanModal] = useState(false);
   const [showEditPlanModal, setShowEditPlanModal] = useState(false);
   const [showExecutionModal, setShowExecutionModal] = useState(false);
+  const [showEditExecutionModal, setShowEditExecutionModal] = useState(false);
   const [showCheckModal, setShowCheckModal] = useState(false);
+  const [showEditCheckModal, setShowEditCheckModal] = useState(false);
   const [showActionModal, setShowActionModal] = useState(false);
+  const [showEditActionModal, setShowEditActionModal] = useState(false);
+  
+  // 編輯循環表單
+  const [cycleForm, setCycleForm] = useState({
+    cycle_name: '',
+    check_frequency: 'monthly' as 'weekly' | 'monthly' | 'quarterly',
+    responsible_user_id: '',
+    data_source: '',
+    initiative_id: '',
+    okr_id: '',
+  });
+  const [initiatives, setInitiatives] = useState<any[]>([]);
+  const [okrs, setOkrs] = useState<any[]>([]);
   
   // 表單狀態
   const [planForm, setPlanForm] = useState({
@@ -56,6 +74,9 @@ export default function PDCADetailPage() {
     check_points: [''],
   });
   const [editingPlan, setEditingPlan] = useState<any>(null);
+  const [editingExecution, setEditingExecution] = useState<any>(null);
+  const [editingCheck, setEditingCheck] = useState<any>(null);
+  const [editingAction, setEditingAction] = useState<any>(null);
   
   const [executionForm, setExecutionForm] = useState({
     check_point: '',
@@ -66,6 +87,17 @@ export default function PDCADetailPage() {
   
   const [checkForm, setCheckForm] = useState({
     check_date: new Date().toISOString().split('T')[0],
+  });
+
+  const [editCheckForm, setEditCheckForm] = useState({
+    check_date: '',
+    completeness_status: 'pass' as 'pass' | 'warning' | 'fail',
+    timeliness_status: 'pass' as 'pass' | 'warning' | 'fail',
+    consistency_status: 'pass' as 'pass' | 'warning' | 'fail',
+    completeness_issues: [] as string[],
+    timeliness_issues: [] as string[],
+    consistency_issues: [] as string[],
+    variance_analysis: '',
   });
   
   const [actionForm, setActionForm] = useState({
@@ -110,23 +142,92 @@ export default function PDCADetailPage() {
 
   const fetchOptions = async () => {
     try {
-      const [usersRes, kpisRes] = await Promise.all([
+      const [usersRes, kpisRes, initiativesRes] = await Promise.all([
         userApi.getUsers(),
         kpiApi.getAll(),
+        initiativeApi.getAll(),
       ]);
       setUsers(usersRes.data || []);
       setKpis(kpisRes.data || []);
+      setInitiatives(initiativesRes.data || []);
 
       // 根據 PDCA 循環的 initiative_id 來取得相關任務
       if (cycle?.initiative_id) {
         const tasksRes = await taskApi.getAll({ initiative_id: cycle.initiative_id });
         setTasks(tasksRes.data || []);
+        
+        // 也載入相關的 OKRs
+        const okrsRes = await okrApi.getAll({ initiative_id: cycle.initiative_id });
+        setOkrs(okrsRes.data || []);
       } else {
         // 如果沒有 initiative_id，則不顯示任務選項
         setTasks([]);
+        setOkrs([]);
       }
     } catch (err) {
       console.error('Error fetching options:', err);
+    }
+  };
+  
+  const handleOpenEditCycleModal = async () => {
+    if (cycle) {
+      setCycleForm({
+        cycle_name: cycle.cycle_name || '',
+        check_frequency: (cycle.check_frequency as 'weekly' | 'monthly' | 'quarterly') || 'monthly',
+        responsible_user_id: cycle.responsible_user_id || '',
+        data_source: cycle.data_source || '',
+        initiative_id: cycle.initiative_id || '',
+        okr_id: cycle.okr_id || '',
+      });
+      
+      // 如果有 initiative_id，載入相關的 OKRs
+      if (cycle.initiative_id) {
+        try {
+          const okrsRes = await okrApi.getAll({ initiative_id: cycle.initiative_id });
+          setOkrs(okrsRes.data || []);
+        } catch (err) {
+          setOkrs([]);
+        }
+      }
+      
+      setShowEditCycleModal(true);
+    }
+  };
+  
+  const handleCycleInitiativeChange = async (initiativeId: string) => {
+    setCycleForm({ ...cycleForm, initiative_id: initiativeId, okr_id: '' });
+    if (initiativeId) {
+      try {
+        const okrsRes = await okrApi.getAll({ initiative_id: initiativeId });
+        setOkrs(okrsRes.data || []);
+      } catch (err) {
+        setOkrs([]);
+      }
+    } else {
+      setOkrs([]);
+    }
+  };
+  
+  const handleUpdateCycle = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!cycle) return;
+    
+    setSubmitting(true);
+    try {
+      await pdcaApi.update(cycle.id, {
+        cycle_name: cycleForm.cycle_name,
+        check_frequency: cycleForm.check_frequency,
+        responsible_user_id: cycleForm.responsible_user_id || undefined,
+        data_source: cycleForm.data_source || undefined,
+        initiative_id: cycleForm.initiative_id || undefined,
+        okr_id: cycleForm.okr_id || undefined,
+      });
+      setShowEditCycleModal(false);
+      await fetchCycle();
+    } catch (error: any) {
+      alert(error.response?.data?.error || '更新 PDCA 循環失敗');
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -220,6 +321,61 @@ export default function PDCADetailPage() {
     }
   };
 
+  const handleEditExecution = (execution: any) => {
+    setEditingExecution(execution);
+    setExecutionForm({
+      check_point: execution.check_point || '',
+      execution_date: execution.execution_date
+        ? new Date(execution.execution_date).toISOString().split('T')[0]
+        : new Date().toISOString().split('T')[0],
+      actual_value: execution.actual_value || '',
+      evidence_urls: execution.evidence_urls && execution.evidence_urls.length > 0
+        ? execution.evidence_urls
+        : [''],
+    });
+    setShowEditExecutionModal(true);
+  };
+
+  const handleUpdateExecution = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingExecution) return;
+    setSubmitting(true);
+    try {
+      await pdcaApi.updateExecution(editingExecution.id, {
+        check_point: executionForm.check_point || undefined,
+        execution_date: executionForm.execution_date,
+        actual_value: executionForm.actual_value || undefined,
+        evidence_urls: executionForm.evidence_urls.filter((url) => url.trim() !== ''),
+      });
+      setShowEditExecutionModal(false);
+      setEditingExecution(null);
+      setExecutionForm({
+        check_point: '',
+        execution_date: new Date().toISOString().split('T')[0],
+        actual_value: '',
+        evidence_urls: [''],
+      });
+      await fetchCycle();
+    } catch (error: any) {
+      alert(error.response?.data?.error || '更新 Execution 失敗');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleDeleteExecution = async (executionId: string) => {
+    if (!confirm('確定要刪除此執行記錄嗎？')) return;
+    setSubmitting(true);
+    try {
+      await pdcaApi.deleteExecution(executionId);
+      await fetchCycle();
+    } catch (error: any) {
+      alert(error.response?.data?.error || '刪除 Execution 失敗');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   // 取得所有 Plan 的檢核點
   const getAllCheckPoints = () => {
     if (!cycle?.plans || cycle.plans.length === 0) return [];
@@ -253,6 +409,77 @@ export default function PDCADetailPage() {
     }
   };
 
+  const handleEditCheck = (check: any) => {
+    setEditingCheck(check);
+    setEditCheckForm({
+      check_date: check.check_date
+        ? new Date(check.check_date).toISOString().split('T')[0]
+        : new Date().toISOString().split('T')[0],
+      completeness_status: check.completeness_status || 'pass',
+      timeliness_status: check.timeliness_status || 'pass',
+      consistency_status: check.consistency_status || 'pass',
+      completeness_issues: check.completeness_issues && Array.isArray(check.completeness_issues)
+        ? check.completeness_issues
+        : [],
+      timeliness_issues: check.timeliness_issues && Array.isArray(check.timeliness_issues)
+        ? check.timeliness_issues
+        : [],
+      consistency_issues: check.consistency_issues && Array.isArray(check.consistency_issues)
+        ? check.consistency_issues
+        : [],
+      variance_analysis: check.variance_analysis || '',
+    });
+    setShowEditCheckModal(true);
+  };
+
+  const handleUpdateCheck = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingCheck) return;
+    setSubmitting(true);
+    try {
+      await pdcaApi.updateCheck(editingCheck.id, {
+        check_date: editCheckForm.check_date,
+        completeness_status: editCheckForm.completeness_status,
+        timeliness_status: editCheckForm.timeliness_status,
+        consistency_status: editCheckForm.consistency_status,
+        completeness_issues: editCheckForm.completeness_issues.filter((issue) => issue.trim() !== ''),
+        timeliness_issues: editCheckForm.timeliness_issues.filter((issue) => issue.trim() !== ''),
+        consistency_issues: editCheckForm.consistency_issues.filter((issue) => issue.trim() !== ''),
+        variance_analysis: editCheckForm.variance_analysis || undefined,
+      });
+      setShowEditCheckModal(false);
+      setEditingCheck(null);
+      setEditCheckForm({
+        check_date: '',
+        completeness_status: 'pass',
+        timeliness_status: 'pass',
+        consistency_status: 'pass',
+        completeness_issues: [],
+        timeliness_issues: [],
+        consistency_issues: [],
+        variance_analysis: '',
+      });
+      await fetchCycle();
+    } catch (error: any) {
+      alert(error.response?.data?.error || '更新 Check 失敗');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleDeleteCheck = async (checkId: string) => {
+    if (!confirm('確定要刪除此檢核記錄嗎？')) return;
+    setSubmitting(true);
+    try {
+      await pdcaApi.deleteCheck(checkId);
+      await fetchCycle();
+    } catch (error: any) {
+      alert(error.response?.data?.error || '刪除 Check 失敗');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const handleCreateAction = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitting(true);
@@ -281,6 +508,86 @@ export default function PDCADetailPage() {
       await fetchCycle();
     } catch (error: any) {
       alert(error.response?.data?.error || '建立改善行動失敗');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleEditAction = (action: any) => {
+    setEditingAction(action);
+    setActionForm({
+      root_cause: action.root_cause || '',
+      action_type: action.action_type || '',
+      action_items: action.action_items && Array.isArray(action.action_items) && action.action_items.length > 0
+        ? action.action_items
+        : [''],
+      expected_kpi_impacts: action.expected_kpi_impacts && Array.isArray(action.expected_kpi_impacts)
+        ? action.expected_kpi_impacts
+        : [],
+      validation_method: action.validation_method || '',
+      responsible_user_id: action.responsible_user_id || '',
+      due_date: action.due_date || '',
+      create_task: false, // 編輯時不允許重新建立任務
+    });
+    setShowEditActionModal(true);
+  };
+
+  const handleUpdateAction = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingAction) return;
+    setSubmitting(true);
+    try {
+      await pdcaApi.updateAction(editingAction.id, {
+        root_cause: actionForm.root_cause,
+        action_type: actionForm.action_type,
+        action_items: actionForm.action_items.filter((item) => item.trim() !== ''),
+        expected_kpi_impacts: actionForm.expected_kpi_impacts,
+        validation_method: actionForm.validation_method || undefined,
+        responsible_user_id: actionForm.responsible_user_id,
+        due_date: actionForm.due_date || undefined,
+        status: editingAction.status || 'pending',
+      });
+      setShowEditActionModal(false);
+      setEditingAction(null);
+      setActionForm({
+        root_cause: '',
+        action_type: '',
+        action_items: [''],
+        expected_kpi_impacts: [],
+        validation_method: '',
+        responsible_user_id: '',
+        due_date: '',
+        create_task: false,
+      });
+      await fetchCycle();
+    } catch (error: any) {
+      alert(error.response?.data?.error || '更新 Action 失敗');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleDeleteAction = async (actionId: string) => {
+    if (!confirm('確定要刪除此改善行動嗎？')) return;
+    setSubmitting(true);
+    try {
+      await pdcaApi.deleteAction(actionId);
+      await fetchCycle();
+    } catch (error: any) {
+      alert(error.response?.data?.error || '刪除 Action 失敗');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleDeleteCycle = async () => {
+    if (!confirm('確定要刪除此 PDCA 循環嗎？此操作將同時刪除所有相關的 Plan、Execution、Check 和 Action 記錄，且無法復原。')) return;
+    setSubmitting(true);
+    try {
+      await pdcaApi.delete(params.id as string);
+      router.push('/pdca');
+    } catch (error: any) {
+      alert(error.response?.data?.error || '刪除 PDCA 循環失敗');
     } finally {
       setSubmitting(false);
     }
@@ -358,8 +665,23 @@ export default function PDCADetailPage() {
 
         {/* 基本資訊 */}
         <div className="bg-white rounded-lg shadow mb-6">
-          <div className="p-6 border-b">
+          <div className="p-6 border-b flex justify-between items-center">
             <h1 className="text-2xl font-bold">{cycle.cycle_name}</h1>
+            <div className="flex gap-2">
+              <button
+                onClick={handleOpenEditCycleModal}
+                className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm"
+              >
+                編輯
+              </button>
+              <button
+                onClick={handleDeleteCycle}
+                className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 text-sm"
+                disabled={submitting}
+              >
+                {submitting ? '刪除中...' : '刪除'}
+              </button>
+            </div>
           </div>
           <div className="p-6 grid grid-cols-1 md:grid-cols-3 gap-6">
             <div>
@@ -482,26 +804,44 @@ export default function PDCADetailPage() {
               <div className="space-y-4">
                 {cycle.executions.map((execution) => (
                   <div key={execution.id} className="border rounded-lg p-4">
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                      <div>
-                        <span className="text-gray-600">執行日期</span>
-                        <p className="font-medium">
-                          {execution.execution_date
-                            ? new Date(execution.execution_date).toLocaleDateString('zh-TW')
-                            : '未設定'}
-                        </p>
+                    <div className="flex justify-between items-start mb-3">
+                      <div className="flex-1 grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                        <div>
+                          <span className="text-gray-600">執行日期</span>
+                          <p className="font-medium">
+                            {execution.execution_date
+                              ? new Date(execution.execution_date).toLocaleDateString('zh-TW')
+                              : '未設定'}
+                          </p>
+                        </div>
+                        <div>
+                          <span className="text-gray-600">關聯檢核點</span>
+                          <p className="font-medium">{execution.check_point || '未指定'}</p>
+                        </div>
+                        <div>
+                          <span className="text-gray-600">實際值</span>
+                          <p className="font-medium">{execution.actual_value || '未記錄'}</p>
+                        </div>
+                        <div>
+                          <span className="text-gray-600">執行人</span>
+                          <p className="font-medium">{execution.executed_by_name || '未知'}</p>
+                        </div>
                       </div>
-                      <div>
-                        <span className="text-gray-600">關聯檢核點</span>
-                        <p className="font-medium">{execution.check_point || '未指定'}</p>
-                      </div>
-                      <div>
-                        <span className="text-gray-600">實際值</span>
-                        <p className="font-medium">{execution.actual_value || '未記錄'}</p>
-                      </div>
-                      <div>
-                        <span className="text-gray-600">執行人</span>
-                        <p className="font-medium">{execution.executed_by_name || '未知'}</p>
+                      <div className="flex gap-2 ml-4">
+                        <button
+                          onClick={() => handleEditExecution(execution)}
+                          className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm"
+                          disabled={submitting}
+                        >
+                          編輯
+                        </button>
+                        <button
+                          onClick={() => handleDeleteExecution(execution.id)}
+                          className="px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700 text-sm"
+                          disabled={submitting}
+                        >
+                          刪除
+                        </button>
                       </div>
                     </div>
                     {execution.evidence_urls && execution.evidence_urls.length > 0 && (
@@ -549,14 +889,32 @@ export default function PDCADetailPage() {
                   <div key={check.id} className="border rounded-lg p-4">
                     <div className="mb-4">
                       <div className="flex items-center justify-between mb-2">
-                        <span className="text-sm text-gray-600">
-                          檢核日期：{check.check_date
-                            ? new Date(check.check_date).toLocaleDateString('zh-TW')
-                            : '未設定'}
-                        </span>
-                        <span className="text-sm text-gray-600">
-                          檢核人：{check.checked_by_name || '未知'}
-                        </span>
+                        <div className="flex-1">
+                          <span className="text-sm text-gray-600">
+                            檢核日期：{check.check_date
+                              ? new Date(check.check_date).toLocaleDateString('zh-TW')
+                              : '未設定'}
+                          </span>
+                          <span className="text-sm text-gray-600 ml-4">
+                            檢核人：{check.checked_by_name || '未知'}
+                          </span>
+                        </div>
+                        <div className="flex gap-2 ml-4">
+                          <button
+                            onClick={() => handleEditCheck(check)}
+                            className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm"
+                            disabled={submitting}
+                          >
+                            編輯
+                          </button>
+                          <button
+                            onClick={() => handleDeleteCheck(check.id)}
+                            className="px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700 text-sm"
+                            disabled={submitting}
+                          >
+                            刪除
+                          </button>
+                        </div>
                       </div>
                     </div>
 
@@ -672,6 +1030,22 @@ export default function PDCADetailPage() {
                           <span className="font-medium">{action.action_type}</span>
                         </div>
                       </div>
+                      <div className="flex gap-2 ml-4">
+                        <button
+                          onClick={() => handleEditAction(action)}
+                          className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm"
+                          disabled={submitting}
+                        >
+                          編輯
+                        </button>
+                        <button
+                          onClick={() => handleDeleteAction(action.id)}
+                          className="px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700 text-sm"
+                          disabled={submitting}
+                        >
+                          刪除
+                        </button>
+                      </div>
                     </div>
 
                     {action.action_items && action.action_items.length > 0 && (
@@ -708,6 +1082,130 @@ export default function PDCADetailPage() {
           </div>
         </div>
       </div>
+
+      {/* 編輯 PDCA 循環模態框 */}
+      {showEditCycleModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <h3 className="text-lg font-semibold mb-4">編輯 PDCA 循環</h3>
+            <form onSubmit={handleUpdateCycle} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  循環名稱 <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={cycleForm.cycle_name}
+                  onChange={(e) => setCycleForm({ ...cycleForm, cycle_name: e.target.value })}
+                  className="w-full px-4 py-2 border rounded-md focus:ring-2 focus:ring-blue-500"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  檢核頻率 <span className="text-red-500">*</span>
+                </label>
+                <select
+                  value={cycleForm.check_frequency}
+                  onChange={(e) => setCycleForm({ ...cycleForm, check_frequency: e.target.value as any })}
+                  className="w-full px-4 py-2 border rounded-md focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="weekly">每週</option>
+                  <option value="monthly">每月</option>
+                  <option value="quarterly">每季</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  負責人
+                </label>
+                <select
+                  value={cycleForm.responsible_user_id}
+                  onChange={(e) => setCycleForm({ ...cycleForm, responsible_user_id: e.target.value })}
+                  className="w-full px-4 py-2 border rounded-md focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">請選擇</option>
+                  {users.map((user) => (
+                    <option key={user.id} value={user.id}>
+                      {user.full_name || user.username}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  資料來源
+                </label>
+                <input
+                  type="text"
+                  value={cycleForm.data_source}
+                  onChange={(e) => setCycleForm({ ...cycleForm, data_source: e.target.value })}
+                  className="w-full px-4 py-2 border rounded-md focus:ring-2 focus:ring-blue-500"
+                  placeholder="例如：報名系統、財務報表"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  策略專案
+                </label>
+                <select
+                  value={cycleForm.initiative_id}
+                  onChange={(e) => handleCycleInitiativeChange(e.target.value)}
+                  className="w-full px-4 py-2 border rounded-md focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">請選擇</option>
+                  {initiatives.map((initiative) => (
+                    <option key={initiative.id} value={initiative.id}>
+                      {initiative.name_zh}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {cycleForm.initiative_id && okrs.length > 0 && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    OKR
+                  </label>
+                  <select
+                    value={cycleForm.okr_id}
+                    onChange={(e) => setCycleForm({ ...cycleForm, okr_id: e.target.value })}
+                    className="w-full px-4 py-2 border rounded-md focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="">請選擇</option>
+                    {okrs.map((okr) => (
+                      <option key={okr.id} value={okr.id}>
+                        {okr.quarter} - {okr.objective}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              <div className="flex justify-end gap-2 pt-4 border-t">
+                <button
+                  type="button"
+                  onClick={() => setShowEditCycleModal(false)}
+                  className="px-4 py-2 text-gray-600 border rounded hover:bg-gray-50"
+                >
+                  取消
+                </button>
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+                >
+                  {submitting ? '更新中...' : '更新'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Plan 模態框 */}
       {showPlanModal && (
@@ -1035,6 +1533,140 @@ export default function PDCADetailPage() {
         </div>
       )}
 
+      {/* 編輯 Execution 模態框 */}
+      {showEditExecutionModal && editingExecution && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <h3 className="text-lg font-semibold mb-4">編輯執行記錄</h3>
+            <form onSubmit={handleUpdateExecution} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">關聯檢核點</label>
+                <select
+                  value={executionForm.check_point}
+                  onChange={(e) => setExecutionForm({ ...executionForm, check_point: e.target.value })}
+                  className="w-full px-4 py-2 border rounded-md focus:ring-2 focus:ring-blue-500"
+                  disabled={getAllCheckPoints().length === 0}
+                >
+                  <option value="">
+                    {getAllCheckPoints().length === 0
+                      ? '尚無檢核點，請先建立 Plan 並設定檢核點'
+                      : '請選擇檢核點（可選）'}
+                  </option>
+                  {getAllCheckPoints().map((point, idx) => (
+                    <option key={idx} value={point}>
+                      {point}
+                    </option>
+                  ))}
+                </select>
+                {getAllCheckPoints().length > 0 && (
+                  <p className="mt-1 text-xs text-gray-500">
+                    顯示所有 Plan 的檢核點
+                  </p>
+                )}
+                {getAllCheckPoints().length === 0 && (
+                  <p className="mt-1 text-xs text-yellow-600">
+                    請先在 Plan 階段建立 Plan 並設定檢核點
+                  </p>
+                )}
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  執行日期 <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="date"
+                  value={executionForm.execution_date}
+                  onChange={(e) =>
+                    setExecutionForm({ ...executionForm, execution_date: e.target.value })
+                  }
+                  className="w-full px-4 py-2 border rounded-md focus:ring-2 focus:ring-blue-500"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">實際值</label>
+                <input
+                  type="text"
+                  value={executionForm.actual_value}
+                  onChange={(e) =>
+                    setExecutionForm({ ...executionForm, actual_value: e.target.value })
+                  }
+                  className="w-full px-4 py-2 border rounded-md focus:ring-2 focus:ring-blue-500"
+                  placeholder="例如：95、98% 等"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">證據連結</label>
+                {executionForm.evidence_urls.map((url, idx) => (
+                  <div key={idx} className="mb-2 flex gap-2">
+                    <input
+                      type="url"
+                      value={url}
+                      onChange={(e) => {
+                        const newUrls = [...executionForm.evidence_urls];
+                        newUrls[idx] = e.target.value;
+                        setExecutionForm({ ...executionForm, evidence_urls: newUrls });
+                      }}
+                      className="flex-1 px-4 py-2 border rounded-md focus:ring-2 focus:ring-blue-500"
+                      placeholder="https://..."
+                    />
+                    {executionForm.evidence_urls.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const newUrls = executionForm.evidence_urls.filter((_, i) => i !== idx);
+                          setExecutionForm({ ...executionForm, evidence_urls: newUrls });
+                        }}
+                        className="px-3 py-2 bg-red-500 text-white rounded hover:bg-red-600"
+                      >
+                        刪除
+                      </button>
+                    )}
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  onClick={() =>
+                    setExecutionForm({
+                      ...executionForm,
+                      evidence_urls: [...executionForm.evidence_urls, ''],
+                    })
+                  }
+                  className="mt-2 px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 text-sm"
+                >
+                  + 新增連結
+                </button>
+              </div>
+              <div className="flex justify-end space-x-3 pt-4 border-t">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowEditExecutionModal(false);
+                    setEditingExecution(null);
+                    setExecutionForm({
+                      check_point: '',
+                      execution_date: new Date().toISOString().split('T')[0],
+                      actual_value: '',
+                      evidence_urls: [''],
+                    });
+                  }}
+                  className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+                >
+                  取消
+                </button>
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
+                >
+                  {submitting ? '更新中...' : '更新執行記錄'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* Check 模態框 */}
       {showCheckModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -1075,6 +1707,257 @@ export default function PDCADetailPage() {
                   className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
                 >
                   {submitting ? '檢核中...' : '執行檢核'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* 編輯 Check 模態框 */}
+      {showEditCheckModal && editingCheck && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+            <h3 className="text-lg font-semibold mb-4">編輯檢核記錄</h3>
+            <form onSubmit={handleUpdateCheck} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  檢核日期 <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="date"
+                  value={editCheckForm.check_date}
+                  onChange={(e) =>
+                    setEditCheckForm({ ...editCheckForm, check_date: e.target.value })
+                  }
+                  className="w-full px-4 py-2 border rounded-md focus:ring-2 focus:ring-blue-500"
+                  required
+                />
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">完整性狀態</label>
+                  <select
+                    value={editCheckForm.completeness_status}
+                    onChange={(e) =>
+                      setEditCheckForm({
+                        ...editCheckForm,
+                        completeness_status: e.target.value as 'pass' | 'warning' | 'fail',
+                      })
+                    }
+                    className="w-full px-4 py-2 border rounded-md focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="pass">通過</option>
+                    <option value="warning">警告</option>
+                    <option value="fail">失敗</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">準時性狀態</label>
+                  <select
+                    value={editCheckForm.timeliness_status}
+                    onChange={(e) =>
+                      setEditCheckForm({
+                        ...editCheckForm,
+                        timeliness_status: e.target.value as 'pass' | 'warning' | 'fail',
+                      })
+                    }
+                    className="w-full px-4 py-2 border rounded-md focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="pass">通過</option>
+                    <option value="warning">警告</option>
+                    <option value="fail">失敗</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">一致性狀態</label>
+                  <select
+                    value={editCheckForm.consistency_status}
+                    onChange={(e) =>
+                      setEditCheckForm({
+                        ...editCheckForm,
+                        consistency_status: e.target.value as 'pass' | 'warning' | 'fail',
+                      })
+                    }
+                    className="w-full px-4 py-2 border rounded-md focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="pass">通過</option>
+                    <option value="warning">警告</option>
+                    <option value="fail">失敗</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  完整性問題 <span className="text-gray-500 font-normal text-xs">(檢查資料是否完整，如目標值、檢核點等必要資訊是否都已設定)</span>
+                </label>
+                {editCheckForm.completeness_issues.map((issue, idx) => (
+                  <div key={idx} className="mb-2 flex gap-2">
+                    <input
+                      type="text"
+                      value={issue}
+                      onChange={(e) => {
+                        const newIssues = [...editCheckForm.completeness_issues];
+                        newIssues[idx] = e.target.value;
+                        setEditCheckForm({ ...editCheckForm, completeness_issues: newIssues });
+                      }}
+                      className="flex-1 px-4 py-2 border rounded-md focus:ring-2 focus:ring-blue-500"
+                      placeholder={`問題 ${idx + 1}`}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const newIssues = editCheckForm.completeness_issues.filter((_, i) => i !== idx);
+                        setEditCheckForm({ ...editCheckForm, completeness_issues: newIssues });
+                      }}
+                      className="px-3 py-2 bg-red-500 text-white rounded hover:bg-red-600"
+                    >
+                      刪除
+                    </button>
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  onClick={() =>
+                    setEditCheckForm({
+                      ...editCheckForm,
+                      completeness_issues: [...editCheckForm.completeness_issues, ''],
+                    })
+                  }
+                  className="mt-2 px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 text-sm"
+                >
+                  + 新增問題
+                </button>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  準時性問題 <span className="text-gray-500 font-normal text-xs">(檢查執行和檢核是否按照預定頻率及時完成，如是否超過更新頻率未更新)</span>
+                </label>
+                {editCheckForm.timeliness_issues.map((issue, idx) => (
+                  <div key={idx} className="mb-2 flex gap-2">
+                    <input
+                      type="text"
+                      value={issue}
+                      onChange={(e) => {
+                        const newIssues = [...editCheckForm.timeliness_issues];
+                        newIssues[idx] = e.target.value;
+                        setEditCheckForm({ ...editCheckForm, timeliness_issues: newIssues });
+                      }}
+                      className="flex-1 px-4 py-2 border rounded-md focus:ring-2 focus:ring-blue-500"
+                      placeholder={`問題 ${idx + 1}`}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const newIssues = editCheckForm.timeliness_issues.filter((_, i) => i !== idx);
+                        setEditCheckForm({ ...editCheckForm, timeliness_issues: newIssues });
+                      }}
+                      className="px-3 py-2 bg-red-500 text-white rounded hover:bg-red-600"
+                    >
+                      刪除
+                    </button>
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  onClick={() =>
+                    setEditCheckForm({
+                      ...editCheckForm,
+                      timeliness_issues: [...editCheckForm.timeliness_issues, ''],
+                    })
+                  }
+                  className="mt-2 px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 text-sm"
+                >
+                  + 新增問題
+                </button>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  一致性問題 <span className="text-gray-500 font-normal text-xs">(檢查預算、人員等資源配置與當初規劃是否一致，確保實際執行符合計畫)</span>
+                </label>
+                {editCheckForm.consistency_issues.map((issue, idx) => (
+                  <div key={idx} className="mb-2 flex gap-2">
+                    <input
+                      type="text"
+                      value={issue}
+                      onChange={(e) => {
+                        const newIssues = [...editCheckForm.consistency_issues];
+                        newIssues[idx] = e.target.value;
+                        setEditCheckForm({ ...editCheckForm, consistency_issues: newIssues });
+                      }}
+                      className="flex-1 px-4 py-2 border rounded-md focus:ring-2 focus:ring-blue-500"
+                      placeholder={`問題 ${idx + 1}`}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const newIssues = editCheckForm.consistency_issues.filter((_, i) => i !== idx);
+                        setEditCheckForm({ ...editCheckForm, consistency_issues: newIssues });
+                      }}
+                      className="px-3 py-2 bg-red-500 text-white rounded hover:bg-red-600"
+                    >
+                      刪除
+                    </button>
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  onClick={() =>
+                    setEditCheckForm({
+                      ...editCheckForm,
+                      consistency_issues: [...editCheckForm.consistency_issues, ''],
+                    })
+                  }
+                  className="mt-2 px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 text-sm"
+                >
+                  + 新增問題
+                </button>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">差異分析</label>
+                <textarea
+                  value={editCheckForm.variance_analysis}
+                  onChange={(e) =>
+                    setEditCheckForm({ ...editCheckForm, variance_analysis: e.target.value })
+                  }
+                  className="w-full px-4 py-2 border rounded-md focus:ring-2 focus:ring-blue-500"
+                  rows={3}
+                  placeholder="例如：實際值 95，目標值 100，偏離 -5%"
+                />
+              </div>
+
+              <div className="flex justify-end space-x-3 pt-4 border-t">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowEditCheckModal(false);
+                    setEditingCheck(null);
+                    setEditCheckForm({
+                      check_date: '',
+                      completeness_status: 'pass',
+                      timeliness_status: 'pass',
+                      consistency_status: 'pass',
+                      completeness_issues: [],
+                      timeliness_issues: [],
+                      consistency_issues: [],
+                      variance_analysis: '',
+                    });
+                  }}
+                  className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+                >
+                  取消
+                </button>
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
+                >
+                  {submitting ? '更新中...' : '更新檢核記錄'}
                 </button>
               </div>
             </form>
@@ -1284,6 +2167,201 @@ export default function PDCADetailPage() {
                   className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
                 >
                   {submitting ? '建立中...' : '建立改善行動'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* 編輯 Action 模態框 */}
+      {showEditActionModal && editingAction && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <h3 className="text-lg font-semibold mb-4">編輯改善行動</h3>
+            <form onSubmit={handleUpdateAction} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  根本原因 <span className="text-red-500">*</span>
+                </label>
+                <select
+                  value={actionForm.root_cause}
+                  onChange={(e) =>
+                    setActionForm({ ...actionForm, root_cause: e.target.value })
+                  }
+                  className="w-full px-4 py-2 border rounded-md focus:ring-2 focus:ring-blue-500"
+                  required
+                >
+                  <option value="">請選擇</option>
+                  <option value="human">人力</option>
+                  <option value="process">流程</option>
+                  <option value="system">系統</option>
+                  <option value="external_policy">外部政策</option>
+                  <option value="partner">合作方</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  對策類型 <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={actionForm.action_type}
+                  onChange={(e) =>
+                    setActionForm({ ...actionForm, action_type: e.target.value })
+                  }
+                  className="w-full px-4 py-2 border rounded-md focus:ring-2 focus:ring-blue-500"
+                  placeholder="例如：流程優化、系統改善等"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  具體行動 <span className="text-red-500">*</span>
+                </label>
+                {actionForm.action_items.map((item, idx) => (
+                  <div key={idx} className="mb-2 flex gap-2">
+                    <input
+                      type="text"
+                      value={item}
+                      onChange={(e) => {
+                        const newItems = [...actionForm.action_items];
+                        newItems[idx] = e.target.value;
+                        setActionForm({ ...actionForm, action_items: newItems });
+                      }}
+                      className="flex-1 px-4 py-2 border rounded-md focus:ring-2 focus:ring-blue-500"
+                      placeholder={`行動項目 ${idx + 1}`}
+                      required
+                    />
+                    {actionForm.action_items.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const newItems = actionForm.action_items.filter((_, i) => i !== idx);
+                          setActionForm({ ...actionForm, action_items: newItems });
+                        }}
+                        className="px-3 py-2 bg-red-500 text-white rounded hover:bg-red-600"
+                      >
+                        刪除
+                      </button>
+                    )}
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  onClick={() =>
+                    setActionForm({
+                      ...actionForm,
+                      action_items: [...actionForm.action_items, ''],
+                    })
+                  }
+                  className="mt-2 px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 text-sm"
+                >
+                  + 新增行動項目
+                </button>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  預期影響的 KPI
+                </label>
+                <div className="max-h-40 overflow-y-auto border rounded p-3">
+                  {kpis.map((kpi) => (
+                    <label key={kpi.id} className="flex items-center space-x-2 mb-2">
+                      <input
+                        type="checkbox"
+                        checked={actionForm.expected_kpi_impacts.includes(kpi.id)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setActionForm({
+                              ...actionForm,
+                              expected_kpi_impacts: [...actionForm.expected_kpi_impacts, kpi.id],
+                            });
+                          } else {
+                            setActionForm({
+                              ...actionForm,
+                              expected_kpi_impacts: actionForm.expected_kpi_impacts.filter(
+                                (id) => id !== kpi.id
+                              ),
+                            });
+                          }
+                        }}
+                        className="rounded"
+                      />
+                      <span className="text-sm">{kpi.name_zh}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">驗證方法</label>
+                <textarea
+                  value={actionForm.validation_method}
+                  onChange={(e) =>
+                    setActionForm({ ...actionForm, validation_method: e.target.value })
+                  }
+                  className="w-full px-4 py-2 border rounded-md focus:ring-2 focus:ring-blue-500"
+                  rows={3}
+                  placeholder="描述如何驗證改善行動的效果"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  負責人 <span className="text-red-500">*</span>
+                </label>
+                <select
+                  value={actionForm.responsible_user_id}
+                  onChange={(e) =>
+                    setActionForm({ ...actionForm, responsible_user_id: e.target.value })
+                  }
+                  className="w-full px-4 py-2 border rounded-md focus:ring-2 focus:ring-blue-500"
+                  required
+                >
+                  <option value="">請選擇</option>
+                  {users.map((user) => (
+                    <option key={user.id} value={user.id}>
+                      {user.full_name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">截止日期</label>
+                <input
+                  type="date"
+                  value={actionForm.due_date}
+                  onChange={(e) =>
+                    setActionForm({ ...actionForm, due_date: e.target.value })
+                  }
+                  className="w-full px-4 py-2 border rounded-md focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div className="flex justify-end space-x-3 pt-4 border-t">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowEditActionModal(false);
+                    setEditingAction(null);
+                    setActionForm({
+                      root_cause: '',
+                      action_type: '',
+                      action_items: [''],
+                      expected_kpi_impacts: [],
+                      validation_method: '',
+                      responsible_user_id: '',
+                      due_date: '',
+                      create_task: false,
+                    });
+                  }}
+                  className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+                >
+                  取消
+                </button>
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
+                >
+                  {submitting ? '更新中...' : '更新改善行動'}
                 </button>
               </div>
             </form>

@@ -120,6 +120,61 @@ router.get('/:id', authenticate, async (req: AuthRequest, res) => {
   }
 });
 
+// 更新 PDCA 循環
+router.put('/:id', authenticate, async (req: AuthRequest, res) => {
+  try {
+    const { id } = req.params;
+    const { cycle_name, check_frequency, responsible_user_id, data_source, initiative_id, okr_id } = req.body;
+
+    // 檢查循環是否存在
+    const cycleResult = await pool.query('SELECT id FROM pdca_cycles WHERE id = $1', [id]);
+    if (cycleResult.rows.length === 0) {
+      return res.status(404).json({ error: 'PDCA 循環不存在' });
+    }
+
+    // 更新循環
+    const result = await pool.query(
+      `UPDATE pdca_cycles SET
+        cycle_name = COALESCE($1, cycle_name),
+        check_frequency = COALESCE($2, check_frequency),
+        responsible_user_id = COALESCE($3, responsible_user_id),
+        data_source = $4,
+        initiative_id = $5,
+        okr_id = $6,
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = $7
+      RETURNING *`,
+      [cycle_name, check_frequency, responsible_user_id, data_source || null, initiative_id || null, okr_id || null, id]
+    );
+
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error('Error updating PDCA cycle:', error);
+    res.status(500).json({ error: '更新 PDCA 循環失敗' });
+  }
+});
+
+// 刪除 PDCA 循環
+router.delete('/:id', authenticate, async (req: AuthRequest, res) => {
+  try {
+    const { id } = req.params;
+
+    // 檢查循環是否存在
+    const cycleResult = await pool.query('SELECT id FROM pdca_cycles WHERE id = $1', [id]);
+    if (cycleResult.rows.length === 0) {
+      return res.status(404).json({ error: 'PDCA 循環不存在' });
+    }
+
+    // 刪除循環（由於外鍵約束，相關的 plans, executions, checks, actions 會自動刪除）
+    await pool.query('DELETE FROM pdca_cycles WHERE id = $1', [id]);
+
+    res.json({ message: 'PDCA 循環已刪除' });
+  } catch (error) {
+    console.error('Error deleting PDCA cycle:', error);
+    res.status(500).json({ error: '刪除 PDCA 循環失敗' });
+  }
+});
+
 // 建立 PDCA 循環
 router.post('/', authenticate, async (req: AuthRequest, res) => {
   try {
@@ -224,15 +279,15 @@ router.post('/:id/executions', authenticate, async (req: AuthRequest, res) => {
     const { id } = req.params;
     const { task_id, check_point, execution_date, actual_value, evidence_urls } = req.body;
 
-    // 檢查是否有 check_point 欄位，如果沒有則使用 task_id
     const result = await pool.query(
       `INSERT INTO pdca_executions (
-        pdca_cycle_id, task_id, execution_date, actual_value, evidence_urls, executed_by
-      ) VALUES ($1, $2, $3, $4, $5, $6)
+        pdca_cycle_id, task_id, check_point, execution_date, actual_value, evidence_urls, executed_by
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7)
       RETURNING *`,
       [
         id,
         task_id || null,
+        check_point || null,
         execution_date,
         actual_value || null,
         evidence_urls || [],
@@ -240,17 +295,60 @@ router.post('/:id/executions', authenticate, async (req: AuthRequest, res) => {
       ]
     );
 
-    // 如果有 check_point，將其作為描述性資訊存儲（可以通過更新查詢添加註釋或額外欄位）
-    // 目前先存儲在返回的資料中，後續可以添加 check_point 欄位到資料庫
-    const execution = result.rows[0];
-    if (check_point) {
-      execution.check_point = check_point;
-    }
-
-    res.status(201).json(execution);
+    res.status(201).json(result.rows[0]);
   } catch (error) {
     console.error('Error recording execution:', error);
     res.status(500).json({ error: '記錄執行失敗' });
+  }
+});
+
+// 更新 Execution
+router.put('/executions/:executionId', authenticate, async (req: AuthRequest, res) => {
+  try {
+    const { executionId } = req.params;
+    const { task_id, check_point, execution_date, actual_value, evidence_urls } = req.body;
+
+    const result = await pool.query(
+      `UPDATE pdca_executions 
+       SET task_id = $1, check_point = $2, execution_date = $3, actual_value = $4, evidence_urls = $5
+       WHERE id = $6
+       RETURNING *`,
+      [
+        task_id || null,
+        check_point || null,
+        execution_date,
+        actual_value || null,
+        evidence_urls || [],
+        executionId,
+      ]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Execution 不存在' });
+    }
+
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error('Error updating execution:', error);
+    res.status(500).json({ error: '更新 Execution 失敗' });
+  }
+});
+
+// 刪除 Execution
+router.delete('/executions/:executionId', authenticate, async (req: AuthRequest, res) => {
+  try {
+    const { executionId } = req.params;
+
+    const result = await pool.query('DELETE FROM pdca_executions WHERE id = $1 RETURNING *', [executionId]);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Execution 不存在' });
+    }
+
+    res.json({ message: 'Execution 已刪除' });
+  } catch (error) {
+    console.error('Error deleting execution:', error);
+    res.status(500).json({ error: '刪除 Execution 失敗' });
   }
 });
 
@@ -390,6 +488,75 @@ router.post('/:id/checks', authenticate, async (req: AuthRequest, res) => {
   }
 });
 
+// 更新 Check
+router.put('/checks/:checkId', authenticate, async (req: AuthRequest, res) => {
+  try {
+    const { checkId } = req.params;
+    const {
+      check_date,
+      completeness_status,
+      timeliness_status,
+      consistency_status,
+      completeness_issues,
+      timeliness_issues,
+      consistency_issues,
+      variance_analysis,
+    } = req.body;
+
+    const result = await pool.query(
+      `UPDATE pdca_checks 
+       SET check_date = $1, 
+           completeness_status = $2, 
+           timeliness_status = $3,
+           consistency_status = $4,
+           completeness_issues = $5,
+           timeliness_issues = $6,
+           consistency_issues = $7,
+           variance_analysis = $8
+       WHERE id = $9
+       RETURNING *`,
+      [
+        check_date,
+        completeness_status,
+        timeliness_status,
+        consistency_status,
+        completeness_issues || [],
+        timeliness_issues || [],
+        consistency_issues || [],
+        variance_analysis || null,
+        checkId,
+      ]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Check 不存在' });
+    }
+
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error('Error updating check:', error);
+    res.status(500).json({ error: '更新 Check 失敗' });
+  }
+});
+
+// 刪除 Check
+router.delete('/checks/:checkId', authenticate, async (req: AuthRequest, res) => {
+  try {
+    const { checkId } = req.params;
+
+    const result = await pool.query('DELETE FROM pdca_checks WHERE id = $1 RETURNING *', [checkId]);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Check 不存在' });
+    }
+
+    res.json({ message: 'Check 已刪除' });
+  } catch (error) {
+    console.error('Error deleting check:', error);
+    res.status(500).json({ error: '刪除 Check 失敗' });
+  }
+});
+
 // 建立改善行動（Act）
 router.post('/:id/actions', authenticate, async (req: AuthRequest, res) => {
   try {
@@ -435,10 +602,15 @@ router.post('/:id/actions', authenticate, async (req: AuthRequest, res) => {
 
       // 為每個行動項目建立任務
       const taskPromises = action_items.map((item: string) => {
+        // 如果 expected_kpi_impacts 是陣列，取第一個作為 kpi_id；否則為 null
+        const kpiId = expected_kpi_impacts && Array.isArray(expected_kpi_impacts) && expected_kpi_impacts.length > 0
+          ? expected_kpi_impacts[0]
+          : null;
+        
         return pool.query(
           `INSERT INTO tasks (
             title, description, assignee_id, due_date, priority, 
-            task_type, status, initiative_id, kpi_ids, risk_tags
+            task_type, status, initiative_id, kpi_id, risk_markers
           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
           RETURNING *`,
           [
@@ -450,7 +622,7 @@ router.post('/:id/actions', authenticate, async (req: AuthRequest, res) => {
             'project',
             'todo',
             initiativeId,
-            expected_kpi_impacts || [],
+            kpiId,
             ['pdca_improvement'],
           ]
         );
@@ -463,6 +635,75 @@ router.post('/:id/actions', authenticate, async (req: AuthRequest, res) => {
   } catch (error) {
     console.error('Error creating action:', error);
     res.status(500).json({ error: '建立改善行動失敗' });
+  }
+});
+
+// 更新 Action
+router.put('/actions/:actionId', authenticate, async (req: AuthRequest, res) => {
+  try {
+    const { actionId } = req.params;
+    const {
+      root_cause,
+      action_type,
+      action_items,
+      expected_kpi_impacts,
+      validation_method,
+      responsible_user_id,
+      due_date,
+      status,
+    } = req.body;
+
+    const result = await pool.query(
+      `UPDATE pdca_actions 
+       SET root_cause = $1, 
+           action_type = $2, 
+           action_items = $3,
+           expected_kpi_impacts = $4,
+           validation_method = $5,
+           responsible_user_id = $6,
+           due_date = $7,
+           status = $8
+       WHERE id = $9
+       RETURNING *`,
+      [
+        root_cause,
+        action_type,
+        action_items || [],
+        expected_kpi_impacts || [],
+        validation_method || null,
+        responsible_user_id,
+        due_date || null,
+        status || 'pending',
+        actionId,
+      ]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Action 不存在' });
+    }
+
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error('Error updating action:', error);
+    res.status(500).json({ error: '更新 Action 失敗' });
+  }
+});
+
+// 刪除 Action
+router.delete('/actions/:actionId', authenticate, async (req: AuthRequest, res) => {
+  try {
+    const { actionId } = req.params;
+
+    const result = await pool.query('DELETE FROM pdca_actions WHERE id = $1 RETURNING *', [actionId]);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Action 不存在' });
+    }
+
+    res.json({ message: 'Action 已刪除' });
+  } catch (error) {
+    console.error('Error deleting action:', error);
+    res.status(500).json({ error: '刪除 Action 失敗' });
   }
 });
 

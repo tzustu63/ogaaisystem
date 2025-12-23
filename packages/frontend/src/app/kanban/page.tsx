@@ -65,6 +65,8 @@ export default function KanbanPage() {
   const [loadingOkrs, setLoadingOkrs] = useState(false);
   const [loadingKrs, setLoadingKrs] = useState(false);
   const [creatingTask, setCreatingTask] = useState(false);
+  const [showEditTaskModal, setShowEditTaskModal] = useState(false);
+  const [editingTask, setEditingTask] = useState<any>(null);
   
   const [newTask, setNewTask] = useState({
     title: '',
@@ -244,9 +246,15 @@ export default function KanbanPage() {
 
     // 更新後端
     try {
-      await api.patch(`/tasks/${draggableId}/status`, {
+      const response = await api.patch(`/tasks/${draggableId}/status`, {
         status: destination.droppableId,
       });
+      
+      // 如果任務移動到「完成」狀態，提示 KR 值已自動更新
+      if (destination.droppableId === 'done') {
+        // 後端會自動更新 KR 進度，這裡不需要額外操作
+        // 可以選擇性地顯示提示訊息（但為了不干擾用戶，暫時不顯示）
+      }
     } catch (error) {
       console.error('Error updating task status:', error);
       // 回滾
@@ -289,6 +297,86 @@ export default function KanbanPage() {
     } catch (error: any) {
       console.error('Error creating task:', error);
       alert(error.response?.data?.error || '建立任務失敗');
+    } finally {
+      setCreatingTask(false);
+    }
+  };
+
+  const handleEditTask = async (task: any) => {
+    try {
+      const taskDetail = await taskApi.getById(task.id);
+      const taskData = taskDetail.data;
+      
+      // 載入相關的 OKR 和 KR（如果有的話）
+      if (taskData.initiative_id) {
+        await handleInitiativeChange(taskData.initiative_id);
+        if (taskData.okr_id) {
+          await handleOKRChange(taskData.okr_id);
+          if (taskData.kr_id) {
+            const kr = keyResults.find((k) => k.id === taskData.kr_id);
+            if (kr) {
+              setSelectedKR(kr);
+            }
+          }
+        }
+      }
+      
+      setEditingTask(taskData);
+      setNewTask({
+        title: taskData.title || '',
+        description: taskData.description || '',
+        task_type: taskData.task_type || 'routine',
+        priority: taskData.priority || 'medium',
+        assignee_id: taskData.assignee_id || '',
+        due_date: taskData.due_date ? new Date(taskData.due_date).toISOString().split('T')[0] : '',
+        initiative_id: taskData.initiative_id || '',
+        okr_id: taskData.okr_id || '',
+        kr_id: taskData.kr_id || '',
+        kr_contribution_value: taskData.kr_contribution_value || 0,
+      });
+      setShowEditTaskModal(true);
+    } catch (error: any) {
+      console.error('Error fetching task:', error);
+      alert('載入任務資料失敗');
+    }
+  };
+
+  const handleUpdateTask = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingTask) return;
+    
+    setCreatingTask(true);
+    try {
+      // 注意：後端 schema 沒有 okr_id 欄位，不要傳送
+      await taskApi.update(editingTask.id, {
+        title: newTask.title,
+        description: newTask.description || undefined,
+        task_type: newTask.task_type,
+        priority: newTask.priority,
+        assignee_id: newTask.assignee_id,
+        due_date: newTask.due_date || undefined,
+        initiative_id: newTask.initiative_id || undefined,
+        kr_id: newTask.kr_id || undefined,
+        kr_contribution_value: newTask.kr_id ? (newTask.kr_contribution_value || 0) : undefined,
+      });
+      setShowEditTaskModal(false);
+      setEditingTask(null);
+      setNewTask({
+        title: '',
+        description: '',
+        task_type: 'routine',
+        priority: 'medium',
+        assignee_id: '',
+        due_date: '',
+        initiative_id: '',
+        okr_id: '',
+        kr_id: '',
+        kr_contribution_value: 0,
+      });
+      await fetchTasks();
+    } catch (error: any) {
+      console.error('Error updating task:', error);
+      alert(error.response?.data?.error || '更新任務失敗');
     } finally {
       setCreatingTask(false);
     }
@@ -464,41 +552,51 @@ export default function KanbanPage() {
                               ref={provided.innerRef}
                               {...provided.draggableProps}
                               {...provided.dragHandleProps}
-                              className={`bg-white rounded-lg shadow p-4 mb-3 ${
+                              className={`bg-white rounded-lg shadow p-3 mb-3 ${
                                 snapshot.isDragging ? 'shadow-lg' : ''
                               }`}
                             >
                               <div className="flex items-start justify-between mb-2">
-                                <Link href={`/kanban?task=${task.id}`} className="flex-1">
-                                  <h3 className="font-medium hover:text-blue-600">{task.title}</h3>
-                                </Link>
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleDeleteTask(task.id, task.title);
-                                  }}
-                                  className="ml-2 text-red-600 hover:text-red-800 text-sm"
-                                  title="刪除任務"
-                                >
-                                  🗑️
-                                </button>
+                                <h3 className="font-medium text-sm flex-1 line-clamp-2">{task.title}</h3>
+                                <div className="flex gap-1 ml-2">
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleEditTask(task);
+                                    }}
+                                    className="text-blue-600 hover:text-blue-800 text-xs px-1"
+                                    title="編輯"
+                                  >
+                                    編輯
+                                  </button>
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleDeleteTask(task.id, task.title);
+                                    }}
+                                    className="text-red-600 hover:text-red-800 text-xs px-1"
+                                    title="刪除"
+                                  >
+                                    刪除
+                                  </button>
+                                </div>
                               </div>
-                              <div className="flex items-center justify-between text-sm text-gray-600">
-                                <span>{task.assignee_name}</span>
+                              <div className="flex items-center justify-between text-xs text-gray-600 mb-1">
+                                <span className="truncate">{task.assignee_name || '未指派'}</span>
                                 <span
-                                  className={`px-2 py-1 rounded text-xs ${getPriorityColor(
+                                  className={`px-1.5 py-0.5 rounded text-xs ${getPriorityColor(
                                     task.priority
                                   )}`}
                                 >
-                                  {task.priority}
+                                  {task.priority === 'urgent' ? '緊急' : task.priority === 'high' ? '高' : task.priority === 'medium' ? '中' : '低'}
                                 </span>
                               </div>
                               {task.due_date && (
-                                <p className="text-xs text-gray-500 mt-2">
-                                  截止：{new Date(task.due_date).toLocaleDateString('zh-TW')}
+                                <p className="text-xs text-gray-500 mb-1">
+                                  {new Date(task.due_date).toLocaleDateString('zh-TW', { month: '2-digit', day: '2-digit' })}
                                 </p>
                               )}
-                              <div className="mt-2 pt-2 border-t">
+                              <div className="mt-1.5 pt-1.5 border-t border-gray-100">
                                 <TracePath taskId={task.id} type="up" />
                               </div>
                             </div>
@@ -513,6 +611,230 @@ export default function KanbanPage() {
             ))}
           </div>
         </DragDropContext>
+
+        {/* 編輯任務模態框 */}
+        {showEditTaskModal && editingTask && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-lg p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+              <h2 className="text-2xl font-bold mb-4">編輯任務</h2>
+              <form onSubmit={handleUpdateTask} className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    任務標題 <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={newTask.title}
+                    onChange={(e) => setNewTask({ ...newTask, title: e.target.value })}
+                    required
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    任務描述
+                  </label>
+                  <textarea
+                    value={newTask.description}
+                    onChange={(e) => setNewTask({ ...newTask, description: e.target.value })}
+                    rows={3}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      任務類型 <span className="text-red-500">*</span>
+                    </label>
+                    <select
+                      value={newTask.task_type}
+                      onChange={(e) => setNewTask({ ...newTask, task_type: e.target.value as any })}
+                      required
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="routine">例行</option>
+                      <option value="project">專案</option>
+                      <option value="incident">事件</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      優先級 <span className="text-red-500">*</span>
+                    </label>
+                    <select
+                      value={newTask.priority}
+                      onChange={(e) => setNewTask({ ...newTask, priority: e.target.value as any })}
+                      required
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="low">低</option>
+                      <option value="medium">中</option>
+                      <option value="high">高</option>
+                      <option value="urgent">緊急</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    負責人 <span className="text-red-500">*</span>
+                  </label>
+                  <select
+                    value={newTask.assignee_id}
+                    onChange={(e) => setNewTask({ ...newTask, assignee_id: e.target.value })}
+                    required
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="">請選擇</option>
+                    {users.map((user) => (
+                      <option key={user.id} value={user.id}>
+                        {user.full_name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    截止日期
+                  </label>
+                  <input
+                    type="date"
+                    value={newTask.due_date}
+                    onChange={(e) => setNewTask({ ...newTask, due_date: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    關聯策略專案 <span className="text-gray-500 text-xs">(步驟 1)</span>
+                  </label>
+                  <select
+                    value={newTask.initiative_id}
+                    onChange={(e) => handleInitiativeChange(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="">請先選擇策略專案</option>
+                    {initiatives.map((initiative) => (
+                      <option key={initiative.id} value={initiative.id}>
+                        {initiative.name_zh}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {newTask.initiative_id && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      選擇 OKR (Objective) <span className="text-gray-500 text-xs">(步驟 2)</span>
+                    </label>
+                    <select
+                      value={newTask.okr_id}
+                      onChange={(e) => handleOKRChange(e.target.value)}
+                      disabled={loadingOkrs || !newTask.initiative_id}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
+                    >
+                      <option value="">
+                        {loadingOkrs ? '載入中...' : okrs.length === 0 ? '該策略專案尚無 OKR' : '請選擇 OKR'}
+                      </option>
+                      {okrs.map((okr) => (
+                        <option key={okr.id} value={okr.id}>
+                          {okr.objective} ({okr.quarter})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                {newTask.okr_id && keyResults.length > 0 && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      選擇 Key Result (KR) <span className="text-gray-500 text-xs">(步驟 3)</span>
+                    </label>
+                    <select
+                      value={newTask.kr_id}
+                      onChange={(e) => {
+                        const krId = e.target.value;
+                        const kr = keyResults.find((k) => k.id === krId);
+                        setSelectedKR(kr || null);
+                        setNewTask({ ...newTask, kr_id: krId, kr_contribution_value: 0 });
+                      }}
+                      disabled={loadingKrs || !newTask.okr_id}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
+                    >
+                      <option value="">
+                        {loadingKrs ? '載入中...' : keyResults.length === 0 ? '該 OKR 尚無 Key Result' : '請選擇 Key Result'}
+                      </option>
+                      {keyResults.map((kr) => (
+                        <option key={kr.id} value={kr.id}>
+                          {kr.description.substring(0, 70)}{kr.description.length > 70 ? '...' : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                {selectedKR && newTask.kr_id && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      KR 貢獻值 <span className="text-gray-500 text-xs">(步驟 4)</span>
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={newTask.kr_contribution_value || 0}
+                      onChange={(e) => setNewTask({ ...newTask, kr_contribution_value: parseFloat(e.target.value) || 0 })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder="輸入貢獻值"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">請輸入此任務對 KR 的貢獻值（單位：{selectedKR.unit || '無單位'}）</p>
+                    <p className="text-xs text-gray-500 mt-1">
+                      所有相關任務的貢獻值會自動加總到 KR 的 current_value
+                    </p>
+                  </div>
+                )}
+
+                <div className="flex justify-end space-x-3 pt-4 border-t">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowEditTaskModal(false);
+                      setEditingTask(null);
+                      setNewTask({
+                        title: '',
+                        description: '',
+                        task_type: 'routine',
+                        priority: 'medium',
+                        assignee_id: '',
+                        due_date: '',
+                        initiative_id: '',
+                        okr_id: '',
+                        kr_id: '',
+                        kr_contribution_value: 0,
+                      });
+                      setSelectedKR(null);
+                    }}
+                    className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+                  >
+                    取消
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={creatingTask}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
+                  >
+                    {creatingTask ? '更新中...' : '更新任務'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
 
         {/* 新增任務模態框 */}
         {showNewTaskModal && (
