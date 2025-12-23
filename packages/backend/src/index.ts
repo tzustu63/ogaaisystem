@@ -29,11 +29,9 @@ app.get('/health', (req, res) => {
 
 // API routes
 import kpiRoutes from './routes/kpi';
-import bscRoutes from './routes/bsc';
 import initiativeRoutes from './routes/initiatives';
 import okrRoutes from './routes/okr';
 import taskRoutes from './routes/tasks';
-import raciRoutes from './routes/raci';
 import incidentRoutes from './routes/incidents';
 import pdcaRoutes from './routes/pdca';
 import dataImportRoutes from './routes/data-import';
@@ -50,7 +48,6 @@ import authRoutes from './routes/auth';
 import uploadRoutes from './routes/upload';
 import systemOptionsRoutes from './routes/system-options';
 import { startSchedulers } from './cron/scheduler';
-import { initializeDefaultTemplates } from './services/raci-templates';
 import { pool } from './config/database';
 import { auditLog } from './middleware/audit';
 import { connectRedis } from './config/redis';
@@ -62,11 +59,9 @@ connectRedis().catch(console.error);
 
 app.use('/api/auth', authRoutes);
 app.use('/api/kpi', kpiRoutes);
-app.use('/api/bsc', bscRoutes);
 app.use('/api/initiatives', initiativeRoutes);
 app.use('/api/okr', okrRoutes);
 app.use('/api/tasks', taskRoutes);
-app.use('/api/raci', raciRoutes);
 app.use('/api/incidents', incidentRoutes);
 app.use('/api/pdca', pdcaRoutes);
 app.use('/api/data-import', dataImportRoutes);
@@ -82,8 +77,6 @@ app.use('/api/settings', settingsRoutes);
 app.use('/api/upload', uploadRoutes);
 app.use('/api/system-options', systemOptionsRoutes);
 
-// 初始化預設 RACI 模板
-initializeDefaultTemplates(pool).catch(console.error);
 
 // 啟動排程任務
 startSchedulers();

@@ -8,7 +8,6 @@ interface NotificationSettings {
   email_enabled: boolean;
   line_notify_enabled: boolean;
   kpi_status_change: boolean;
-  workflow_notifications: boolean;
   pdca_reminders: boolean;
   incident_alerts: boolean;
 }
@@ -18,7 +17,6 @@ export default function NotificationsPage() {
     email_enabled: true,
     line_notify_enabled: false,
     kpi_status_change: true,
-    workflow_notifications: true,
     pdca_reminders: true,
     incident_alerts: true,
   });
@@ -128,7 +126,6 @@ export default function NotificationsPage() {
           <div className="space-y-4">
             {[
               { key: 'kpi_status_change' as const, label: 'KPI 狀態變更', desc: '當 KPI 燈號變更時發送通知' },
-              { key: 'workflow_notifications' as const, label: '工作流通知', desc: '工作流狀態變更與會簽提醒' },
               { key: 'pdca_reminders' as const, label: 'PDCA 提醒', desc: 'PDCA 檢核到期提醒' },
               { key: 'incident_alerts' as const, label: '事件警示', desc: '緊急事件發生時立即通知' },
             ].map((item) => (

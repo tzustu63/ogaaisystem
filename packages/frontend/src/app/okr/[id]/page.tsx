@@ -72,16 +72,7 @@ export default function OKRDetailPage() {
     }
   };
 
-  const handleUpdateProgress = async (krId: string, newValue: number) => {
-    try {
-      await api.put(`/okr/key-results/${krId}/progress`, {
-        current_value: newValue,
-      });
-      await fetchOKR();
-    } catch (error: any) {
-      alert(error.response?.data?.error || '更新失敗');
-    }
-  };
+  // 移除手動更新進度功能 - 進度現在由任務自動計算
 
   const getProgressColor = (progress: number, krType?: string) => {
     if (krType === 'kpi_based') return 'bg-purple-500';
@@ -126,10 +117,10 @@ export default function OKRDetailPage() {
   }
 
   const overallProgress = okr.key_results.length > 0
-    ? Math.round(
-        okr.key_results.reduce((sum, kr) => sum + (kr.progress_percentage || 0), 0) /
+    ? Math.min(100, Math.round(
+        okr.key_results.reduce((sum, kr) => sum + (parseFloat(String(kr.progress_percentage)) || 0), 0) /
           okr.key_results.length
-      )
+      ))
     : 0;
 
   return (
@@ -212,7 +203,7 @@ export default function OKRDetailPage() {
                   </div>
                   
                   <div className="text-right ml-4">
-                    <p className="text-2xl font-bold">{kr.progress_percentage || 0}%</p>
+                    <p className="text-2xl font-bold">{Math.min(100, parseFloat(String(kr.progress_percentage)) || 0).toFixed(0)}%</p>
                     <p className="text-sm text-gray-500">
                       {kr.current_value || 0} / {kr.target_value} {kr.unit || ''}
                     </p>
@@ -226,7 +217,7 @@ export default function OKRDetailPage() {
                       kr.progress_percentage || 0,
                       kr.kr_type
                     )}`}
-                    style={{ width: `${kr.progress_percentage || 0}%` }}
+                    style={{ width: `${Math.min(100, parseFloat(String(kr.progress_percentage)) || 0)}%` }}
                   />
                 </div>
 
@@ -242,21 +233,13 @@ export default function OKRDetailPage() {
                     </button>
                   ) : (
                     <div className="flex items-center space-x-2">
-                      <span className="text-sm text-gray-500">更新進度：</span>
-                      <input
-                        type="number"
-                        defaultValue={kr.current_value || 0}
-                        min={0}
-                        max={kr.target_value}
-                        className="w-20 px-2 py-1 text-sm border rounded"
-                        onBlur={(e) => {
-                          const newValue = parseFloat(e.target.value);
-                          if (!isNaN(newValue) && newValue !== kr.current_value) {
-                            handleUpdateProgress(kr.id, newValue);
-                          }
-                        }}
-                      />
-                      <span className="text-sm text-gray-500">/ {kr.target_value}</span>
+                      <span className="text-sm text-gray-500">進度自動計算：</span>
+                      <span className="text-sm font-medium text-gray-700">
+                        {kr.current_value || 0} / {kr.target_value} {kr.unit || ''}
+                      </span>
+                      <span className="text-xs text-gray-400">
+                        （由關聯任務自動計算）
+                      </span>
                     </div>
                   )}
                 </div>

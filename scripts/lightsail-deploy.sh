@@ -143,3 +143,4 @@ echo -e "${YELLOW}💡 提示：${NC}"
 echo "  1. 確保 Lightsail 防火牆規則允許端口 13000 和 13001"
 echo "  2. 查看日誌: ssh -i $SSH_KEY_PATH $USERNAME@$PUBLIC_IP 'cd $PROJECT_DIR && docker-compose logs -f'"
 
+

@@ -20,6 +20,7 @@ const CATEGORIES = [
   { key: 'person', label: '人員名單', description: '可指派為負責人的人員' },
   { key: 'funding_source', label: '經費來源', description: '專案的經費來源類別' },
   { key: 'indicator', label: '對應指標', description: '專案相關的績效指標' },
+  { key: 'academic_year', label: '學年度', description: 'OKR 目標使用的學年度選項（數值格式，例如：114）' },
 ];
 
 export default function SystemOptionsPage() {
@@ -30,6 +31,15 @@ export default function SystemOptionsPage() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [newOption, setNewOption] = useState({ value: '', label: '', description: '' });
   const [saving, setSaving] = useState(false);
+
+  // 處理學年度選項值的同步
+  const handleAcademicYearValueChange = (value: string) => {
+    if (selectedCategory === 'academic_year') {
+      setNewOption({ value, label: value, description: '' });
+    } else {
+      setNewOption({ ...newOption, value });
+    }
+  };
 
   useEffect(() => {
     fetchOptions();
@@ -47,16 +57,34 @@ export default function SystemOptionsPage() {
   };
 
   const handleAddOption = async () => {
-    if (!newOption.value.trim() || !newOption.label.trim()) {
-      alert('請填寫選項值和顯示名稱');
+    if (!newOption.value.trim()) {
+      alert('請填寫學年度');
       return;
+    }
+
+    // 如果是學年度，驗證格式（必須為數值）
+    if (selectedCategory === 'academic_year') {
+      const academicYearRegex = /^\d+$/;
+      if (!academicYearRegex.test(newOption.value.trim())) {
+        alert('學年度格式錯誤，請輸入數值（例如：114）');
+        return;
+      }
+    } else {
+      if (!newOption.label.trim()) {
+        alert('請填寫顯示名稱');
+        return;
+      }
     }
 
     setSaving(true);
     try {
       await api.post(`/system-options/category/${selectedCategory}`, {
-        value: newOption.value.trim().toLowerCase().replace(/\s+/g, '_'),
-        label: newOption.label.trim(),
+        value: selectedCategory === 'academic_year' 
+          ? newOption.value.trim() 
+          : newOption.value.trim().toLowerCase().replace(/\s+/g, '_'),
+        label: selectedCategory === 'academic_year' 
+          ? newOption.value.trim()  // 學年度：顯示名稱 = 選項值
+          : newOption.label.trim(),
         description: newOption.description.trim() || undefined,
       });
       await fetchOptions();
@@ -76,7 +104,7 @@ export default function SystemOptionsPage() {
     try {
       await api.put(`/system-options/${editingOption.id}`, {
         label: editingOption.label,
-        description: editingOption.description,
+        description: editingOption.description?.trim() || undefined,
         is_active: editingOption.is_active,
       });
       await fetchOptions();
@@ -233,27 +261,47 @@ export default function SystemOptionsPage() {
             <div className="bg-white rounded-lg shadow-lg p-6 w-full max-w-md">
               <h3 className="text-lg font-semibold mb-4">新增{currentCategoryInfo?.label}</h3>
               <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium mb-1">顯示名稱 *</label>
-                  <input
-                    type="text"
-                    value={newOption.label}
-                    onChange={(e) => setNewOption({ ...newOption, label: e.target.value })}
-                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                    placeholder="例如：教務處"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1">選項值 *</label>
-                  <input
-                    type="text"
-                    value={newOption.value}
-                    onChange={(e) => setNewOption({ ...newOption, value: e.target.value })}
-                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                    placeholder="例如：academic_affairs（英文，無空格）"
-                  />
-                  <p className="text-xs text-gray-500 mt-1">系統識別用，建議使用英文和底線</p>
-                </div>
+                {selectedCategory === 'academic_year' ? (
+                  <div>
+                    <label className="block text-sm font-medium mb-1">學年度 *</label>
+                    <input
+                      type="text"
+                      value={newOption.value}
+                      onChange={(e) => handleAcademicYearValueChange(e.target.value)}
+                      className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                      placeholder="例如：114"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                      請輸入學年度數值（例如：114、115）
+                    </p>
+                  </div>
+                ) : (
+                  <>
+                    <div>
+                      <label className="block text-sm font-medium mb-1">顯示名稱 *</label>
+                      <input
+                        type="text"
+                        value={newOption.label}
+                        onChange={(e) => setNewOption({ ...newOption, label: e.target.value })}
+                        className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                        placeholder="例如：教務處"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium mb-1">選項值 *</label>
+                      <input
+                        type="text"
+                        value={newOption.value}
+                        onChange={(e) => setNewOption({ ...newOption, value: e.target.value })}
+                        className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                        placeholder="例如：academic_affairs（英文，無空格）"
+                      />
+                      <p className="text-xs text-gray-500 mt-1">
+                        系統識別用，建議使用英文和底線
+                      </p>
+                    </div>
+                  </>
+                )}
                 <div>
                   <label className="block text-sm font-medium mb-1">說明</label>
                   <input

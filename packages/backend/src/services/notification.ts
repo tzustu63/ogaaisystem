@@ -110,21 +110,4 @@ export const notifyKPIStatusChange = async (
   await sendEmail(recipientEmail, `KPI 狀態變更：${kpiName}`, message);
 };
 
-// 工作流通知
-export const notifyWorkflowAction = async (
-  workflowName: string,
-  action: string,
-  recipientEmail: string,
-  message?: string
-): Promise<void> => {
-  const emailMessage = `
-    <h2>工作流通知</h2>
-    <p><strong>工作流：</strong>${workflowName}</p>
-    <p><strong>動作：</strong>${action}</p>
-    ${message ? `<p>${message}</p>` : ''}
-    <p>請登入系統處理。</p>
-  `;
-
-  await sendEmail(recipientEmail, `工作流通知：${workflowName}`, emailMessage);
-};
 

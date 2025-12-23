@@ -29,14 +29,9 @@ export default function Home() {
             <p className="text-gray-600">任務管理與追蹤</p>
           </Link>
           
-          <Link href="/raci" className="p-6 bg-white rounded-lg shadow hover:shadow-lg transition">
-            <h2 className="text-2xl font-semibold mb-2">👥 RACI 工作流</h2>
-            <p className="text-gray-600">權責矩陣與工作流管理</p>
-          </Link>
-          
           <Link href="/incidents" className="p-6 bg-white rounded-lg shadow hover:shadow-lg transition">
             <h2 className="text-2xl font-semibold mb-2">🚨 緊急事件</h2>
-            <p className="text-gray-600">Incident 處理與追蹤</p>
+            <p className="text-gray-600">緊急事件處理與追蹤</p>
           </Link>
         </div>
       </div>

@@ -68,7 +68,6 @@ export default function AuditPage() {
       initiatives: '策略專案',
       okr: 'OKR',
       tasks: '任務',
-      raci: 'RACI 工作流',
       incidents: '事件',
       pdca: 'PDCA 循環',
       users: '用戶',

@@ -208,8 +208,6 @@ router.post('/', authenticate, async (req: AuthRequest, res) => {
 
     await client.query('COMMIT');
 
-    // TODO: 通知 RACI 中所有角色
-
     res.status(201).json(incidentResult.rows[0]);
   } catch (error) {
     await client.query('ROLLBACK');

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useParams } from 'next/navigation';
 import { initiativeApi, kpiApi } from '@/lib/api';
 import api from '@/lib/api';
 import Link from 'next/link';
@@ -25,7 +25,6 @@ interface InitiativeFormData {
   notes: string;
 }
 
-
 interface KPI {
   id: string;
   kpi_id: string;
@@ -39,10 +38,11 @@ interface SystemOption {
   label: string;
 }
 
-
-export default function NewInitiativePage() {
+export default function EditInitiativePage() {
   const router = useRouter();
+  const params = useParams();
   const [loading, setLoading] = useState(false);
+  const [fetching, setFetching] = useState(true);
   const [kpis, setKpis] = useState<KPI[]>([]);
   const [loadingOptions, setLoadingOptions] = useState(true);
   
@@ -72,32 +72,70 @@ export default function NewInitiativePage() {
     notes: '',
   });
 
-  // 取得下一個專案編號
-  const fetchNextInitiativeId = useCallback(async () => {
-    try {
-      const res = await api.get('/system-options/next-initiative-id');
-      setFormData(prev => ({ ...prev, initiative_id: res.data.next_id }));
-    } catch (error) {
-      console.error('Error fetching next initiative ID:', error);
-    }
-  }, []);
-
   useEffect(() => {
-    // 載入所有選項
-    Promise.all([
-      kpiApi.getAll().then((res) => setKpis(res.data)),
-      api.get('/system-options/category/initiative_type').then((res) => setInitiativeTypes(res.data)),
-      api.get('/system-options/category/department').then((res) => setDepartments(res.data)),
-      api.get('/system-options/category/person').then((res) => setPersons(res.data)),
-      api.get('/system-options/category/funding_source').then((res) => setFundingSources(res.data)),
-      api.get('/system-options/category/indicator').then((res) => setIndicators(res.data)),
-      fetchNextInitiativeId(),
-    ])
-      .catch((err) => {
-        console.error('Error loading options:', err);
-      })
-      .finally(() => setLoadingOptions(false));
-  }, [fetchNextInitiativeId]);
+    const fetchData = async () => {
+      try {
+        // 載入所有選項
+        const [kpisRes, typesRes, deptsRes, personsRes, sourcesRes, indicatorsRes, initiativeRes] = await Promise.all([
+          kpiApi.getAll(),
+          api.get('/system-options/category/initiative_type'),
+          api.get('/system-options/category/department'),
+          api.get('/system-options/category/person'),
+          api.get('/system-options/category/funding_source'),
+          api.get('/system-options/category/indicator'),
+          initiativeApi.getById(params.id as string),
+        ]);
+
+        setKpis(kpisRes.data);
+        setInitiativeTypes(typesRes.data);
+        setDepartments(deptsRes.data);
+        setPersons(personsRes.data);
+        setFundingSources(sourcesRes.data);
+        setIndicators(indicatorsRes.data);
+
+        // 載入策略專案資料
+        const initiative = initiativeRes.data;
+        
+        // 格式化日期（從 YYYY-MM-DD 或 Date 物件）
+        const formatDate = (date: any) => {
+          if (!date) return '';
+          if (typeof date === 'string') {
+            return date.split('T')[0]; // 取日期部分
+          }
+          return '';
+        };
+
+        setFormData({
+          initiative_id: initiative.initiative_id || '',
+          name_zh: initiative.name_zh || '',
+          name_en: initiative.name_en || '',
+          initiative_type: initiative.initiative_type || '',
+          status: initiative.status || 'planning',
+          risk_level: initiative.risk_level || undefined,
+          start_date: formatDate(initiative.start_date),
+          end_date: formatDate(initiative.end_date),
+          budget: initiative.budget || 0,
+          responsible_unit: initiative.responsible_unit || '',
+          primary_owner: initiative.primary_owner || '',
+          co_owners: initiative.co_owners || [],
+          funding_sources: initiative.funding_sources || [],
+          related_indicators: initiative.related_indicators || [],
+          kpi_ids: initiative.kpis?.map((k: any) => k.id) || [],
+          notes: initiative.notes || '',
+        });
+      } catch (error) {
+        console.error('Error fetching data:', error);
+        alert('載入資料失敗');
+      } finally {
+        setFetching(false);
+        setLoadingOptions(false);
+      }
+    };
+
+    if (params.id) {
+      fetchData();
+    }
+  }, [params.id]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -119,11 +157,11 @@ export default function NewInitiativePage() {
         notes: formData.notes || undefined,
       };
       
-      const response = await initiativeApi.create(submitData);
-      router.push(`/initiatives/${response.data.id}`);
+      await initiativeApi.update(params.id as string, submitData);
+      router.push(`/initiatives/${params.id}`);
     } catch (error: any) {
-      console.error('Error creating initiative:', error);
-      alert(error.response?.data?.error || '創建專案失敗');
+      console.error('Error updating initiative:', error);
+      alert(error.response?.data?.error || '更新專案失敗');
     } finally {
       setLoading(false);
     }
@@ -152,7 +190,7 @@ export default function NewInitiativePage() {
     }));
   };
 
-  if (loadingOptions) {
+  if (fetching || loadingOptions) {
     return (
       <div className="p-8">
         <div className="max-w-4xl mx-auto">
@@ -172,11 +210,15 @@ export default function NewInitiativePage() {
               策略專案
             </Link>
             <span>/</span>
-            <span className="text-gray-900">新增策略專案</span>
+            <Link href={`/initiatives/${params.id}`} className="hover:text-gray-900">
+              詳情
+            </Link>
+            <span>/</span>
+            <span className="text-gray-900">編輯</span>
           </div>
         </nav>
 
-        <h1 className="text-2xl font-bold mb-6">新增策略專案</h1>
+        <h1 className="text-2xl font-bold mb-6">編輯策略專案</h1>
 
         <form onSubmit={handleSubmit} className="bg-white rounded-lg shadow p-6 space-y-6">
           {/* 基本資訊 */}
@@ -192,10 +234,9 @@ export default function NewInitiativePage() {
                   type="text"
                   name="initiative_id"
                   value={formData.initiative_id}
-                  readOnly
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-100 cursor-not-allowed"
+                  onChange={handleInputChange}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
-                <p className="text-xs text-gray-500 mt-1">系統自動產生</p>
               </div>
 
               <div>
@@ -216,11 +257,6 @@ export default function NewInitiativePage() {
                     </option>
                   ))}
                 </select>
-                <p className="text-xs text-gray-500 mt-1">
-                  <Link href="/settings/options" className="text-blue-600 hover:underline">
-                    管理選項
-                  </Link>
-                </p>
               </div>
             </div>
 
@@ -371,13 +407,12 @@ export default function NewInitiativePage() {
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  主要負責人 <span className="text-red-500">*</span>
+                  主要負責人
                 </label>
                 <select
                   name="primary_owner"
                   value={formData.primary_owner}
                   onChange={handleInputChange}
-                  required
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
                   <option value="">請選擇</option>
@@ -509,7 +544,7 @@ export default function NewInitiativePage() {
           {/* 操作按鈕 */}
           <div className="flex justify-end space-x-3 pt-4 border-t">
             <Link
-              href="/initiatives"
+              href={`/initiatives/${params.id}`}
               className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
             >
               取消
@@ -519,7 +554,7 @@ export default function NewInitiativePage() {
               disabled={loading}
               className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {loading ? '創建中...' : '創建專案'}
+              {loading ? '更新中...' : '更新專案'}
             </button>
           </div>
         </form>
@@ -527,3 +562,4 @@ export default function NewInitiativePage() {
     </div>
   );
 }
+

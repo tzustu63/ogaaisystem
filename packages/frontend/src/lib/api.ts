@@ -39,11 +39,14 @@ export const kpiApi = {
   getById: (id: string) => api.get(`/kpi/${id}`),
   create: (data: any) => api.post('/kpi', data),
   update: (id: string, data: any) => api.put(`/kpi/${id}`, data),
+  delete: (id: string) => api.delete(`/kpi/${id}`),
   updateValue: (id: string, data: any) => api.post(`/kpi/${id}/values`, data),
   markException: (id: string, period: string, reason: string) => 
     api.post(`/kpi/${id}/values/${period}/exception`, { reason }),
   removeException: (id: string, period: string) => 
     api.delete(`/kpi/${id}/values/${period}/exception`),
+  updateInitiatives: (id: string, initiative_ids: string[]) =>
+    api.put(`/kpi/${id}/initiatives`, { initiative_ids }),
 };
 
 // Initiative API
@@ -52,8 +55,17 @@ export const initiativeApi = {
   getById: (id: string) => api.get(`/initiatives/${id}`),
   create: (data: any) => api.post('/initiatives', data),
   update: (id: string, data: any) => api.put(`/initiatives/${id}`, data),
+  delete: (id: string) => api.delete(`/initiatives/${id}`),
   getProgramReport: (id: string) => api.get(`/initiatives/${id}/program-report`),
   getEvidenceSummary: (id: string) => api.get(`/initiatives/${id}/evidence-summary`),
+};
+
+// OKR API
+export const okrApi = {
+  getAll: (params?: any) => api.get('/okr', { params }),
+  getById: (id: string) => api.get(`/okr/${id}`),
+  create: (data: any) => api.post('/okr', data),
+  update: (id: string, data: any) => api.put(`/okr/${id}`, data),
 };
 
 // Task API
@@ -62,36 +74,42 @@ export const taskApi = {
   getById: (id: string) => api.get(`/tasks/${id}`),
   create: (data: any) => api.post('/tasks', data),
   updateStatus: (id: string, status: string) => api.patch(`/tasks/${id}/status`, { status }),
+  delete: (id: string) => api.delete(`/tasks/${id}`),
   getKanbanBoard: (params?: any) => api.get('/tasks/kanban/board', { params }),
   getFormDefinitions: (params?: any) => api.get('/tasks/forms/definitions', { params }),
   getTaskForms: (taskId: string) => api.get(`/tasks/${taskId}/forms`),
   submitTaskForm: (taskId: string, data: any) => api.post(`/tasks/${taskId}/forms`, data),
 };
 
-// BSC API
-export const bscApi = {
-  getObjectives: (params?: any) => api.get('/bsc/objectives', { params }),
-  getObjectiveById: (id: string) => api.get(`/bsc/objectives/${id}`),
-  createObjective: (data: any) => api.post('/bsc/objectives', data),
-  getCausalLinks: () => api.get('/bsc/causal-links'),
-  createCausalLink: (data: any) => api.post('/bsc/causal-links', data),
-  deleteCausalLink: (id: string) => api.delete(`/bsc/causal-links/${id}`),
-  getDashboardSummary: () => api.get('/bsc/dashboard/summary'),
+// Incident API
+export const incidentApi = {
+  getAll: (params?: any) => api.get('/incidents', { params }),
+  getById: (id: string) => api.get(`/incidents/${id}`),
+  create: (data: any) => api.post('/incidents', data),
+  updateChecklist: (incidentId: string, checklistId: string, isCompleted: boolean) =>
+    api.patch(`/incidents/${incidentId}/checklists/${checklistId}`, { is_completed: isCompleted }),
+  close: (incidentId: string, data: any) => api.post(`/incidents/${incidentId}/close`, data),
 };
+
+// PDCA API
+export const pdcaApi = {
+  getAll: (params?: any) => api.get('/pdca', { params }),
+  getById: (id: string) => api.get(`/pdca/${id}`),
+  create: (data: any) => api.post('/pdca', data),
+  getActions: (params?: any) => api.get('/pdca/actions/dashboard', { params }),
+  createPlan: (id: string, data: any) => api.post(`/pdca/${id}/plans`, data),
+  updatePlan: (planId: string, data: any) => api.put(`/pdca/plans/${planId}`, data),
+  deletePlan: (planId: string) => api.delete(`/pdca/plans/${planId}`),
+  createExecution: (id: string, data: any) => api.post(`/pdca/${id}/executions`, data),
+  createCheck: (id: string, data: any) => api.post(`/pdca/${id}/checks`, data),
+  createAction: (id: string, data: any) => api.post(`/pdca/${id}/actions`, data),
+};
+
 
 // Trace API
 export const traceApi = {
   getTaskTraceUp: (taskId: string) => api.get(`/trace/task/${taskId}/up`),
   getKpiTraceDown: (kpiId: string) => api.get(`/trace/kpi/${kpiId}/down`),
-};
-
-// RACI API
-export const raciApi = {
-  getTemplates: () => api.get('/raci/templates'),
-  createTemplate: (data: any) => api.post('/raci/templates', data),
-  getWorkflows: () => api.get('/raci/workflows'),
-  getConsultationProgress: (workflowId: string) => 
-    api.get(`/raci/workflows/${workflowId}/consultation-progress`),
 };
 
 // GDPR API

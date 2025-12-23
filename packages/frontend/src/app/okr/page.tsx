@@ -7,17 +7,11 @@ import Link from 'next/link';
 interface KeyResult {
   id: string;
   description: string;
-  kr_type: 'kpi_based' | 'custom';
   target_value: number;
   current_value: number;
   progress_percentage: number;
   status: string;
   unit?: string;
-  kpi_id?: string;
-  kpi_code?: string;
-  kpi_name?: string;
-  kpi_baseline_value?: number;
-  kpi_target_value?: number;
 }
 
 interface OKR {
@@ -32,7 +26,6 @@ interface OKR {
 export default function OKRPage() {
   const [okrs, setOkrs] = useState<OKR[]>([]);
   const [loading, setLoading] = useState(true);
-  const [syncing, setSyncing] = useState(false);
 
   const fetchOKRs = async () => {
     try {
@@ -60,27 +53,9 @@ export default function OKRPage() {
     fetchOKRs();
   }, []);
 
-  // 同步所有 KPI 類型 KR 的進度
-  const handleSyncAllKPI = async () => {
-    setSyncing(true);
-    try {
-      const res = await api.post('/okr/sync-all-kpi-kr');
-      alert(`同步完成！成功 ${res.data.synced_count} 個，跳過 ${res.data.skipped_count} 個`);
-      fetchOKRs(); // 重新載入
-    } catch (err) {
-      console.error('Error syncing KPI KRs:', err);
-      alert('同步失敗');
-    } finally {
-      setSyncing(false);
-    }
-  };
 
   // 取得進度條顏色
-  const getProgressColor = (kr: KeyResult) => {
-    if (kr.kr_type === 'kpi_based') {
-      return 'bg-purple-500'; // KPI 類型用紫色
-    }
-    const progress = kr.progress_percentage || 0;
+  const getProgressColor = (progress: number) => {
     if (progress >= 100) return 'bg-green-500';
     if (progress >= 70) return 'bg-blue-500';
     if (progress >= 30) return 'bg-yellow-500';
@@ -100,38 +75,18 @@ export default function OKRPage() {
             <p className="text-gray-600 mt-1">目標與關鍵結果追蹤</p>
           </div>
           <div className="flex gap-3">
-            <button
-              onClick={handleSyncAllKPI}
-              disabled={syncing}
-              className="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 disabled:opacity-50"
-            >
-              {syncing ? '同步中...' : '🔄 同步 KPI 進度'}
-            </button>
             <Link
               href="/okr/new"
               className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
             >
-              新增 OKR
+              新增目標 Objective
             </Link>
-          </div>
-        </div>
-
-        {/* 圖例說明 */}
-        <div className="bg-gray-50 rounded-lg p-4 mb-6 flex items-center gap-6 text-sm">
-          <span className="font-medium">KR 類型：</span>
-          <div className="flex items-center gap-2">
-            <span className="w-3 h-3 bg-purple-500 rounded-full"></span>
-            <span>KPI 連動</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="w-3 h-3 bg-blue-500 rounded-full"></span>
-            <span>自定義指標</span>
           </div>
         </div>
 
         {okrs.length === 0 ? (
           <div className="bg-white rounded-lg shadow p-8 text-center text-gray-500">
-            尚無 OKR 資料，請點擊「新增 OKR」開始建立
+            尚無目標資料，請點擊「新增目標 Objective」開始建立
           </div>
         ) : (
           <div className="space-y-6">
@@ -158,23 +113,7 @@ export default function OKRPage() {
                       <div key={kr.id} className="border rounded-lg p-4">
                         <div className="flex justify-between items-start mb-2">
                           <div className="flex-1">
-                            <div className="flex items-center gap-2">
-                              {kr.kr_type === 'kpi_based' ? (
-                                <span className="px-2 py-0.5 bg-purple-100 text-purple-700 text-xs rounded">
-                                  KPI 連動
-                                </span>
-                              ) : (
-                                <span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs rounded">
-                                  自定義
-                                </span>
-                              )}
-                              <span className="font-medium">{kr.description}</span>
-                            </div>
-                            {kr.kr_type === 'kpi_based' && kr.kpi_name && (
-                              <p className="text-sm text-purple-600 mt-1">
-                                📊 {kr.kpi_code}: {kr.kpi_name}
-                              </p>
-                            )}
+                            <span className="font-medium">{kr.description}</span>
                           </div>
                           <div className="text-right">
                             <div className="text-lg font-semibold">
@@ -187,7 +126,7 @@ export default function OKRPage() {
                         </div>
                         <div className="w-full bg-gray-200 rounded-full h-2.5">
                           <div
-                            className={`${getProgressColor(kr)} h-2.5 rounded-full transition-all`}
+                            className={`${getProgressColor(parseFloat(String(kr.progress_percentage || 0)))} h-2.5 rounded-full transition-all`}
                             style={{
                               width: `${Math.min(100, parseFloat(String(kr.progress_percentage || 0)))}%`,
                             }}

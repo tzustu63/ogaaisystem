@@ -137,6 +137,7 @@ export default function KPIDetailPage() {
   const router = useRouter();
   const [kpi, setKpi] = useState<KPI | null>(null);
   const [loading, setLoading] = useState(true);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     if (params.id) {
@@ -151,6 +152,24 @@ export default function KPIDetailPage() {
         });
     }
   }, [params.id]);
+
+  const handleDelete = async () => {
+    if (!confirm('確定要刪除此 KPI 嗎？此操作無法復原。\n\n刪除後將：\n- 刪除所有 KPI 版本記錄\n- 刪除所有 KPI 數值記錄\n- 移除與策略專案的關聯\n- 清除任務中的 KPI 引用')) {
+      return;
+    }
+
+    setDeleting(true);
+    try {
+      await kpiApi.delete(params.id as string);
+      alert('KPI 已成功刪除');
+      router.push('/kpi');
+    } catch (error: any) {
+      console.error('Error deleting KPI:', error);
+      alert(error.response?.data?.error || '刪除 KPI 失敗');
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   const getStatusColor = (status?: string) => {
     switch (status) {
@@ -270,6 +289,19 @@ export default function KPIDetailPage() {
                   )}`}
                 />
                 <span className="text-sm text-gray-600">KPI ID: {kpi.kpi_id}</span>
+                <button
+                  onClick={() => router.push(`/kpi/${params.id}/edit`)}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+                >
+                  ✏️ 編輯
+                </button>
+                <button
+                  onClick={handleDelete}
+                  disabled={deleting}
+                  className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-50"
+                >
+                  {deleting ? '刪除中...' : '🗑️ 刪除'}
+                </button>
               </div>
             </div>
           </div>

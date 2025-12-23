@@ -62,6 +62,22 @@ export default function InitiativesPage() {
     }
   };
 
+  const handleDelete = async (id: string, name: string) => {
+    if (!confirm(`確定要刪除策略專案「${name}」嗎？\n\n刪除後將：\n- 刪除所有相關的 OKR\n- 刪除與 KPI 的關聯\n- 清除任務中的專案引用\n- 清除 PDCA 循環中的專案引用`)) {
+      return;
+    }
+
+    try {
+      await initiativeApi.delete(id);
+      // 重新載入列表
+      const res = await initiativeApi.getAll();
+      setInitiatives(res.data);
+    } catch (error) {
+      console.error('Error deleting initiative:', error);
+      alert('刪除失敗，請稍後再試');
+    }
+  };
+
   if (loading) {
     return <div className="p-8">載入中...</div>;
   }
@@ -139,12 +155,20 @@ export default function InitiativesPage() {
                   )}
                 </div>
 
-                <Link
-                  href={`/initiatives/${initiative.id}`}
-                  className="ml-4 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
-                >
-                  查看詳情
-                </Link>
+                <div className="ml-4 flex space-x-2">
+                  <Link
+                    href={`/initiatives/${initiative.id}`}
+                    className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                  >
+                    查看詳情
+                  </Link>
+                  <button
+                    onClick={() => handleDelete(initiative.id, initiative.name_zh)}
+                    className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
+                  >
+                    🗑️ 刪除
+                  </button>
+                </div>
               </div>
             </div>
           ))}

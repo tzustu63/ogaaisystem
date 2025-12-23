@@ -11,7 +11,6 @@ const notificationSettingsSchema = z.object({
   line_notify_enabled: z.boolean().default(false),
   line_notify_token: z.string().optional(),
   kpi_status_change: z.boolean().default(true),
-  workflow_notifications: z.boolean().default(true),
   pdca_reminders: z.boolean().default(true),
   incident_alerts: z.boolean().default(true),
 });
@@ -24,7 +23,6 @@ router.get('/notifications', authenticate, async (req: AuthRequest, res: Respons
       email_enabled: process.env.SMTP_HOST ? true : false,
       line_notify_enabled: process.env.LINE_NOTIFY_TOKEN ? true : false,
       kpi_status_change: true,
-      workflow_notifications: true,
       pdca_reminders: true,
       incident_alerts: true,
     });

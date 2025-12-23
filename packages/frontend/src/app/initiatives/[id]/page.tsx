@@ -107,7 +107,6 @@ interface InitiativeDetail {
   initiative_type: string;
   status: string;
   risk_level?: string;
-  bsc_objectives?: any[];
   kpis?: any[];
   programs?: string[];
   okrs?: any[];
@@ -196,11 +195,19 @@ export default function InitiativeDetailPage() {
 
         {/* 基本資訊 */}
         <div className="bg-white rounded-lg shadow mb-6">
-          <div className="p-6 border-b">
-            <h1 className="text-2xl font-bold">{initiative.name_zh}</h1>
-            {initiative.name_en && (
-              <p className="text-gray-600 mt-1">{initiative.name_en}</p>
-            )}
+          <div className="p-6 border-b flex justify-between items-start">
+            <div>
+              <h1 className="text-2xl font-bold">{initiative.name_zh}</h1>
+              {initiative.name_en && (
+                <p className="text-gray-600 mt-1">{initiative.name_en}</p>
+              )}
+            </div>
+            <Link
+              href={`/initiatives/${initiative.id}/edit`}
+              className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+            >
+              ✏️ 編輯
+            </Link>
           </div>
           <div className="p-6 grid grid-cols-1 md:grid-cols-3 gap-6">
             <div>
@@ -219,15 +226,6 @@ export default function InitiativeDetailPage() {
                   <dd>{initiative.risk_level || '未設定'}</dd>
                 </div>
               </dl>
-            </div>
-
-            <div>
-              <h3 className="font-semibold mb-2">關聯 BSC 目標</h3>
-              <ul className="space-y-1 text-sm">
-                {initiative.bsc_objectives?.map((obj) => (
-                  <li key={obj.id}>{obj.name_zh}</li>
-                )) || <li className="text-gray-500">無</li>}
-              </ul>
             </div>
 
             <div>

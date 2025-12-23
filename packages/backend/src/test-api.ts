@@ -44,12 +44,6 @@ async function runTests() {
     // 實際使用時需要先建立 KPI 和數值
   });
 
-  // 2. 會簽進度
-  await test('會簽進度 API 端點存在', async () => {
-    // 需要真實的 workflow_id
-    // const res = await api.get('/raci/workflows/test-id/consultation-progress');
-    // 預期：404 或 200（取決於是否有資料）
-  });
 
   // 3. 表單管理
   await test('表單定義 API', async () => {

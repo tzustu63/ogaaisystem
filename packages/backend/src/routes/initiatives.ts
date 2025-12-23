@@ -20,8 +20,6 @@ const createInitiativeSchema = z.object({
   co_owners: z.array(z.string()).optional(),
   funding_sources: z.array(z.string()).optional(),
   related_indicators: z.array(z.string()).optional(),
-  bsc_perspective: z.string().min(1),
-  bsc_objective_ids: z.array(z.string().uuid()).optional(),
   kpi_ids: z.array(z.string().uuid()).optional(),
   notes: z.string().optional(),
 });
@@ -57,13 +55,7 @@ router.get('/:id', authenticate, async (req: AuthRequest, res) => {
       return res.status(404).json({ error: 'Initiative 不存在' });
     }
 
-    const [objectives, kpis, programs, okrs] = await Promise.all([
-      pool.query(
-        `SELECT o.* FROM bsc_objectives o
-         INNER JOIN initiative_bsc_objectives ibo ON o.id = ibo.objective_id
-         WHERE ibo.initiative_id = $1`,
-        [id]
-      ),
+    const [kpis, programs, okrs] = await Promise.all([
       pool.query(
         `SELECT k.*, ik.expected_impact, ik.actual_impact_description
          FROM kpi_registry k
@@ -83,7 +75,6 @@ router.get('/:id', authenticate, async (req: AuthRequest, res) => {
 
     res.json({
       ...initiativeResult.rows[0],
-      bsc_objectives: objectives.rows,
       kpis: kpis.rows,
       programs: programs.rows.map((r) => r.program),
       okrs: okrs.rows,
@@ -116,8 +107,8 @@ router.post('/', authenticate, async (req: AuthRequest, res) => {
       `INSERT INTO initiatives (
         initiative_id, name_zh, name_en, initiative_type, status, risk_level,
         start_date, end_date, budget, responsible_unit, primary_owner, co_owners,
-        funding_sources, related_indicators, bsc_perspective, notes, created_by
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+        funding_sources, related_indicators, notes, created_by
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
       RETURNING *`,
       [
         validated.initiative_id,
@@ -134,23 +125,12 @@ router.post('/', authenticate, async (req: AuthRequest, res) => {
         validated.co_owners || null,
         validated.funding_sources || null,
         validated.related_indicators || null,
-        validated.bsc_perspective,
         validated.notes || null,
         req.user?.id,
       ]
     );
 
     const initiativeId = result.rows[0].id;
-
-    // 關聯 BSC 目標（如有選擇具體目標）
-    if (validated.bsc_objective_ids && validated.bsc_objective_ids.length > 0) {
-      for (const objectiveId of validated.bsc_objective_ids) {
-        await client.query(
-          'INSERT INTO initiative_bsc_objectives (initiative_id, objective_id) VALUES ($1, $2)',
-          [initiativeId, objectiveId]
-        );
-      }
-    }
 
     // 關聯 KPI（如有）
     if (validated.kpi_ids && validated.kpi_ids.length > 0) {
@@ -174,6 +154,162 @@ router.post('/', authenticate, async (req: AuthRequest, res) => {
     }
     console.error('Error creating initiative:', error);
     res.status(500).json({ error: '建立 Initiative 失敗' });
+  } finally {
+    client.release();
+  }
+});
+
+// 更新 Initiative
+router.put('/:id', authenticate, async (req: AuthRequest, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { id } = req.params;
+
+    // 檢查 Initiative 是否存在
+    const existing = await client.query(
+      'SELECT id FROM initiatives WHERE id = $1',
+      [id]
+    );
+
+    if (existing.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: '策略專案不存在' });
+    }
+
+    // 使用相同的 schema，但所有欄位都是可選的
+    const updateSchema = createInitiativeSchema.partial();
+    const validated = updateSchema.parse(req.body);
+
+    // 構建更新語句
+    const updateFields: string[] = [];
+    const updateValues: any[] = [];
+    let paramIndex = 1;
+
+    if (validated.initiative_id !== undefined) {
+      // 檢查 initiative_id 唯一性（排除自己）
+      const duplicate = await client.query(
+        'SELECT id FROM initiatives WHERE initiative_id = $1 AND id != $2',
+        [validated.initiative_id, id]
+      );
+      if (duplicate.rows.length > 0) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ error: 'Initiative ID 已存在' });
+      }
+      updateFields.push(`initiative_id = $${paramIndex}`);
+      updateValues.push(validated.initiative_id);
+      paramIndex++;
+    }
+
+    if (validated.name_zh !== undefined) {
+      updateFields.push(`name_zh = $${paramIndex}`);
+      updateValues.push(validated.name_zh);
+      paramIndex++;
+    }
+    if (validated.name_en !== undefined) {
+      updateFields.push(`name_en = $${paramIndex}`);
+      updateValues.push(validated.name_en || null);
+      paramIndex++;
+    }
+    if (validated.initiative_type !== undefined) {
+      updateFields.push(`initiative_type = $${paramIndex}`);
+      updateValues.push(validated.initiative_type);
+      paramIndex++;
+    }
+    if (validated.status !== undefined) {
+      updateFields.push(`status = $${paramIndex}`);
+      updateValues.push(validated.status);
+      paramIndex++;
+    }
+    if (validated.risk_level !== undefined) {
+      updateFields.push(`risk_level = $${paramIndex}`);
+      updateValues.push(validated.risk_level || null);
+      paramIndex++;
+    }
+    if (validated.start_date !== undefined) {
+      updateFields.push(`start_date = $${paramIndex}`);
+      updateValues.push(validated.start_date || null);
+      paramIndex++;
+    }
+    if (validated.end_date !== undefined) {
+      updateFields.push(`end_date = $${paramIndex}`);
+      updateValues.push(validated.end_date || null);
+      paramIndex++;
+    }
+    if (validated.budget !== undefined) {
+      updateFields.push(`budget = $${paramIndex}`);
+      updateValues.push(validated.budget || null);
+      paramIndex++;
+    }
+    if (validated.responsible_unit !== undefined) {
+      updateFields.push(`responsible_unit = $${paramIndex}`);
+      updateValues.push(validated.responsible_unit);
+      paramIndex++;
+    }
+    if (validated.primary_owner !== undefined) {
+      updateFields.push(`primary_owner = $${paramIndex}`);
+      updateValues.push(validated.primary_owner || null);
+      paramIndex++;
+    }
+    if (validated.co_owners !== undefined) {
+      updateFields.push(`co_owners = $${paramIndex}`);
+      updateValues.push(validated.co_owners || null);
+      paramIndex++;
+    }
+    if (validated.funding_sources !== undefined) {
+      updateFields.push(`funding_sources = $${paramIndex}`);
+      updateValues.push(validated.funding_sources || null);
+      paramIndex++;
+    }
+    if (validated.related_indicators !== undefined) {
+      updateFields.push(`related_indicators = $${paramIndex}`);
+      updateValues.push(validated.related_indicators || null);
+      paramIndex++;
+    }
+    if (validated.notes !== undefined) {
+      updateFields.push(`notes = $${paramIndex}`);
+      updateValues.push(validated.notes || null);
+      paramIndex++;
+    }
+
+    // 更新 KPI 關聯（如有提供）
+    if (validated.kpi_ids !== undefined) {
+      // 先刪除現有關聯
+      await client.query('DELETE FROM initiative_kpis WHERE initiative_id = $1', [id]);
+      // 再新增新關聯
+      if (validated.kpi_ids.length > 0) {
+        for (const kpiId of validated.kpi_ids) {
+          await client.query(
+            `INSERT INTO initiative_kpis (initiative_id, kpi_id, expected_impact)
+             VALUES ($1, $2, 'positive')`,
+            [id, kpiId]
+          );
+        }
+      }
+    }
+
+    if (updateFields.length > 0) {
+      updateFields.push(`updated_at = CURRENT_TIMESTAMP`);
+      updateValues.push(id);
+
+      await client.query(
+        `UPDATE initiatives SET ${updateFields.join(', ')} WHERE id = $${paramIndex}`,
+        updateValues
+      );
+    }
+
+    // 取得更新後的資料
+    const result = await client.query('SELECT * FROM initiatives WHERE id = $1', [id]);
+
+    await client.query('COMMIT');
+    res.json(result.rows[0]);
+  } catch (error) {
+    await client.query('ROLLBACK');
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ error: '驗證失敗', details: error.errors });
+    }
+    console.error('Error updating initiative:', error);
+    res.status(500).json({ error: '更新策略專案失敗' });
   } finally {
     client.release();
   }
@@ -247,6 +383,50 @@ router.get('/:id/program-report', authenticate, async (req: AuthRequest, res) =>
   } catch (error) {
     console.error('Error generating program report:', error);
     res.status(500).json({ error: '產生報告失敗' });
+  }
+});
+
+// 刪除 Initiative
+router.delete('/:id', authenticate, async (req: AuthRequest, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { id } = req.params;
+
+    // 檢查 Initiative 是否存在
+    const initiativeResult = await client.query(
+      'SELECT id FROM initiatives WHERE id = $1',
+      [id]
+    );
+
+    if (initiativeResult.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: '策略專案不存在' });
+    }
+
+    // 處理 tasks 中的引用（設為 NULL）
+    await client.query(
+      'UPDATE tasks SET initiative_id = NULL WHERE initiative_id = $1',
+      [id]
+    );
+
+    // 處理 pdca_cycles 中的引用（設為 NULL）
+    await client.query(
+      'UPDATE pdca_cycles SET initiative_id = NULL WHERE initiative_id = $1',
+      [id]
+    );
+
+    // 刪除 Initiative（CASCADE 會自動處理關聯表）
+    await client.query('DELETE FROM initiatives WHERE id = $1', [id]);
+
+    await client.query('COMMIT');
+    res.status(204).send(); // No Content
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Error deleting initiative:', error);
+    res.status(500).json({ error: '刪除策略專案失敗' });
+  } finally {
+    client.release();
   }
 });
 

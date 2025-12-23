@@ -9,12 +9,11 @@ router.get('/task/:id/up', authenticate, async (req: AuthRequest, res: Response)
   try {
     const { id } = req.params;
 
-    // 取得任務資訊（包含 KR 引用的 KPI）
+    // 取得任務資訊
     const taskResult = await pool.query(
       `SELECT t.*, 
               i.id as initiative_id, i.name_zh as initiative_name,
               kr.id as kr_id, kr.description as kr_description, 
-              kr.kr_type, kr.kpi_id as kr_kpi_id,
               o.id as okr_id, o.objective as okr_objective
        FROM tasks t
        LEFT JOIN initiatives i ON t.initiative_id = i.id
@@ -47,28 +46,8 @@ router.get('/task/:id/up', authenticate, async (req: AuthRequest, res: Response)
         id: task.kr_id,
         name: task.kr_description,
         type: 'key_result',
-        kr_type: task.kr_type,
         url: `/okr?kr=${task.kr_id}`,
       });
-
-      // 2.1 如果 KR 是 KPI 類型，加入 KR 關聯的 KPI
-      if (task.kr_type === 'kpi_based' && task.kr_kpi_id) {
-        const krKpiResult = await pool.query(
-          'SELECT * FROM kpi_registry WHERE id = $1',
-          [task.kr_kpi_id]
-        );
-        if (krKpiResult.rows.length > 0) {
-          const kpi = krKpiResult.rows[0];
-          path.push({
-            level: 'kpi',
-            id: kpi.id,
-            name: kpi.name_zh,
-            type: 'kpi',
-            source: 'kr_reference', // 標記來源是 KR 引用
-            url: `/kpi/${kpi.id}`,
-          });
-        }
-      }
 
       // 3. 關聯的 OKR
       if (task.okr_id) {
@@ -92,30 +71,9 @@ router.get('/task/:id/up', authenticate, async (req: AuthRequest, res: Response)
         url: `/initiatives/${task.initiative_id}`,
       });
 
-      // 5. 取得 Initiative 關聯的 BSC 目標
-      const bscResult = await pool.query(
-        `SELECT bo.*
-         FROM bsc_objectives bo
-         INNER JOIN initiative_bsc_objectives ibo ON bo.id = ibo.objective_id
-         WHERE ibo.initiative_id = $1`,
-        [task.initiative_id]
-      );
-
-      if (bscResult.rows.length > 0) {
-        bscResult.rows.forEach((obj) => {
-          path.push({
-            level: 'bsc',
-            id: obj.id,
-            name: obj.name_zh,
-            type: 'bsc_objective',
-            perspective: obj.perspective,
-            url: `/dashboard/strategy-map?objective=${obj.id}`,
-          });
-        });
-      }
     }
 
-    // 6. Task 直接影響的 KPI（保留向後相容）
+    // 5. Task 直接影響的 KPI（保留向後相容）
     if (task.kpi_id) {
       // 檢查是否已透過 KR 加入相同的 KPI
       const alreadyAdded = path.some(p => p.type === 'kpi' && p.id === task.kpi_id);
@@ -176,7 +134,6 @@ router.get('/kpi/:id/down', authenticate, async (req: AuthRequest, res: Response
         id: kpi.id,
         kpi_id: kpi.kpi_id,
         name: kpi.name_zh,
-        bsc_perspective: kpi.bsc_perspective,
         url: `/kpi/${kpi.id}`,
       },
       initiatives: [] as any[],
@@ -205,35 +162,6 @@ router.get('/kpi/:id/down', authenticate, async (req: AuthRequest, res: Response
       });
     });
 
-    // 3. 透過 KR 引用此 KPI 的 OKRs（新增：整合後的追蹤方式）
-    const okrsByKRResult = await pool.query(
-      `SELECT DISTINCT o.*, kr.id as kr_id, kr.description as kr_description, kr.progress_percentage
-       FROM okrs o
-       INNER JOIN key_results kr ON o.id = kr.okr_id
-       WHERE kr.kr_type = 'kpi_based' AND kr.kpi_id = $1`,
-      [id]
-    );
-
-    okrsByKRResult.rows.forEach((row) => {
-      // 添加 OKR（避免重複）
-      if (!drillDown.okrs.some(o => o.id === row.id)) {
-        drillDown.okrs.push({
-          id: row.id,
-          objective: row.objective,
-          quarter: row.quarter,
-          source: 'kr_kpi_reference',
-          url: `/okr/${row.id}`,
-        });
-      }
-      // 添加 Key Result
-      drillDown.key_results.push({
-        id: row.kr_id,
-        description: row.kr_description,
-        progress_percentage: row.progress_percentage,
-        okr_id: row.id,
-        source: 'kpi_based',
-      });
-    });
 
     // 4. 透過 Task 直接關聯的 OKRs（向後相容）
     const okrsByTaskResult = await pool.query(
@@ -257,25 +185,6 @@ router.get('/kpi/:id/down', authenticate, async (req: AuthRequest, res: Response
       }
     });
 
-    // 5. 透過 KR 引用此 KPI 的 Tasks
-    const tasksByKRResult = await pool.query(
-      `SELECT t.*, kr.description as kr_description
-       FROM tasks t
-       INNER JOIN key_results kr ON t.kr_id = kr.id
-       WHERE kr.kr_type = 'kpi_based' AND kr.kpi_id = $1`,
-      [id]
-    );
-
-    tasksByKRResult.rows.forEach((task) => {
-      drillDown.tasks.push({
-        id: task.id,
-        title: task.title,
-        status: task.status,
-        kr_description: task.kr_description,
-        source: 'kr_kpi_reference',
-        url: `/kanban?task=${task.id}`,
-      });
-    });
 
     // 6. 直接關聯此 KPI 的 Tasks（向後相容）
     const tasksDirectResult = await pool.query(

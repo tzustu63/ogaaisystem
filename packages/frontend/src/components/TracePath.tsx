@@ -53,7 +53,6 @@ export default function TracePath({ taskId, kpiId, type }: TracePathProps) {
       okr: 'OKR',
       initiative: '策略專案',
       kpi: 'KPI',
-      bsc: 'BSC 目標',
     };
     return labels[level] || level;
   };

@@ -19,6 +19,7 @@ const categorySchema = z.enum([
   'person',
   'funding_source',
   'indicator',
+  'academic_year',
 ]);
 
 // 取得所有類別的選項
@@ -111,7 +112,12 @@ router.post('/category/:category', async (req: Request, res: Response) => {
 router.put('/:id', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const validatedData = optionSchema.partial().parse(req.body);
+    // 處理 description：將空字串轉為 undefined，以便通過驗證
+    const body = { ...req.body };
+    if (body.description === '') {
+      body.description = undefined;
+    }
+    const validatedData = optionSchema.partial().parse(body);
     
     const updates: string[] = [];
     const values: any[] = [];
@@ -127,7 +133,7 @@ router.put('/:id', async (req: Request, res: Response) => {
     }
     if (validatedData.description !== undefined) {
       updates.push(`description = $${paramIndex++}`);
-      values.push(validatedData.description);
+      values.push(validatedData.description || null);
     }
     if (validatedData.is_active !== undefined) {
       updates.push(`is_active = $${paramIndex++}`);

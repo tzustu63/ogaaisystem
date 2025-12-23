@@ -53,6 +53,73 @@ router.get('/', authenticate, async (req: AuthRequest, res) => {
   }
 });
 
+// 取得單一 PDCA 循環
+router.get('/:id', authenticate, async (req: AuthRequest, res) => {
+  try {
+    const { id } = req.params;
+
+    // 取得循環基本資訊
+    const cycleResult = await pool.query(
+      `SELECT p.*, 
+             u.full_name as responsible_name,
+             i.name_zh as initiative_name,
+             o.objective as okr_objective
+      FROM pdca_cycles p
+      LEFT JOIN users u ON p.responsible_user_id = u.id
+      LEFT JOIN initiatives i ON p.initiative_id = i.id
+      LEFT JOIN okrs o ON p.okr_id = o.id
+      WHERE p.id = $1`,
+      [id]
+    );
+
+    if (cycleResult.rows.length === 0) {
+      return res.status(404).json({ error: 'PDCA 循環不存在' });
+    }
+
+    const cycle = cycleResult.rows[0];
+
+    // 取得相關的 Plans, Executions, Checks, Actions
+    const [plansResult, executionsResult, checksResult, actionsResult] = await Promise.all([
+      pool.query(
+        'SELECT * FROM pdca_plans WHERE pdca_cycle_id = $1 ORDER BY created_at DESC',
+        [id]
+      ),
+      pool.query(
+        `SELECT e.*, u.full_name as executed_by_name
+         FROM pdca_executions e
+         LEFT JOIN users u ON e.executed_by = u.id
+         WHERE e.pdca_cycle_id = $1 ORDER BY e.execution_date DESC`,
+        [id]
+      ),
+      pool.query(
+        `SELECT c.*, u.full_name as checked_by_name
+         FROM pdca_checks c
+         LEFT JOIN users u ON c.checked_by = u.id
+         WHERE c.pdca_cycle_id = $1 ORDER BY c.check_date DESC`,
+        [id]
+      ),
+      pool.query(
+        `SELECT a.*, u.full_name as responsible_name
+         FROM pdca_actions a
+         LEFT JOIN users u ON a.responsible_user_id = u.id
+         WHERE a.pdca_cycle_id = $1 ORDER BY a.created_at DESC`,
+        [id]
+      ),
+    ]);
+
+    res.json({
+      ...cycle,
+      plans: plansResult.rows,
+      executions: executionsResult.rows,
+      checks: checksResult.rows,
+      actions: actionsResult.rows,
+    });
+  } catch (error) {
+    console.error('Error fetching PDCA cycle:', error);
+    res.status(500).json({ error: '取得 PDCA 循環失敗' });
+  }
+});
+
 // 建立 PDCA 循環
 router.post('/', authenticate, async (req: AuthRequest, res) => {
   try {
@@ -108,12 +175,56 @@ router.post('/:id/plans', authenticate, async (req: AuthRequest, res) => {
   }
 });
 
+// 更新 Plan
+router.put('/plans/:planId', authenticate, async (req: AuthRequest, res) => {
+  try {
+    const { planId } = req.params;
+    const { plan_description, target_value, check_points } = req.body;
+
+    const result = await pool.query(
+      `UPDATE pdca_plans 
+       SET plan_description = $1, target_value = $2, check_points = $3
+       WHERE id = $4
+       RETURNING *`,
+      [plan_description, target_value || null, JSON.stringify(check_points || []), planId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Plan 不存在' });
+    }
+
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error('Error updating plan:', error);
+    res.status(500).json({ error: '更新 Plan 失敗' });
+  }
+});
+
+// 刪除 Plan
+router.delete('/plans/:planId', authenticate, async (req: AuthRequest, res) => {
+  try {
+    const { planId } = req.params;
+
+    const result = await pool.query('DELETE FROM pdca_plans WHERE id = $1 RETURNING *', [planId]);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Plan 不存在' });
+    }
+
+    res.json({ message: 'Plan 已刪除' });
+  } catch (error) {
+    console.error('Error deleting plan:', error);
+    res.status(500).json({ error: '刪除 Plan 失敗' });
+  }
+});
+
 // 記錄執行（Do）
 router.post('/:id/executions', authenticate, async (req: AuthRequest, res) => {
   try {
     const { id } = req.params;
-    const { task_id, execution_date, actual_value, evidence_urls } = req.body;
+    const { task_id, check_point, execution_date, actual_value, evidence_urls } = req.body;
 
+    // 檢查是否有 check_point 欄位，如果沒有則使用 task_id
     const result = await pool.query(
       `INSERT INTO pdca_executions (
         pdca_cycle_id, task_id, execution_date, actual_value, evidence_urls, executed_by
@@ -129,7 +240,14 @@ router.post('/:id/executions', authenticate, async (req: AuthRequest, res) => {
       ]
     );
 
-    res.status(201).json(result.rows[0]);
+    // 如果有 check_point，將其作為描述性資訊存儲（可以通過更新查詢添加註釋或額外欄位）
+    // 目前先存儲在返回的資料中，後續可以添加 check_point 欄位到資料庫
+    const execution = result.rows[0];
+    if (check_point) {
+      execution.check_point = check_point;
+    }
+
+    res.status(201).json(execution);
   } catch (error) {
     console.error('Error recording execution:', error);
     res.status(500).json({ error: '記錄執行失敗' });

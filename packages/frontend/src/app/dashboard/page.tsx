@@ -26,22 +26,20 @@ interface OKR {
 
 export default function DashboardPage() {
   const [kpis, setKpis] = useState<any[]>([]);
-  const [dashboardSummary, setDashboardSummary] = useState<any>(null);
   const [initiatives, setInitiatives] = useState<Initiative[]>([]);
   const [okrs, setOKRs] = useState<OKR[]>([]);
   const [loading, setLoading] = useState(true);
-  const [viewMode, setViewMode] = useState<'overview' | 'initiatives' | 'okr' | 'drilldown'>('overview');
+  const [viewMode, setViewMode] = useState<'overview' | 'okr' | 'drilldown'>('overview');
+  const [selectedStatus, setSelectedStatus] = useState<string | null>(null);
 
   useEffect(() => {
     Promise.all([
       kpiApi.getAll(),
-      api.get('/bsc/dashboard/summary'),
       api.get('/initiatives'),
       api.get('/okr'),
     ])
-      .then(([kpisRes, summaryRes, initRes, okrRes]) => {
+      .then(([kpisRes, initRes, okrRes]) => {
         setKpis(kpisRes.data);
-        setDashboardSummary(summaryRes.data);
         setInitiatives(initRes.data || []);
         setOKRs(okrRes.data || []);
         setLoading(false);
@@ -52,55 +50,34 @@ export default function DashboardPage() {
       });
   }, []);
 
-  // 統計燈號
+  // 統計燈號（確保與 KPI 頁面一致）
   const statusCounts = {
     green: kpis.filter((k) => k.status === 'green').length,
     yellow: kpis.filter((k) => k.status === 'yellow').length,
-    red: kpis.filter((k) => k.status === 'red').length,
+    red: kpis.filter((k) => k.status === 'red' || !k.status).length, // 無狀態的視為紅燈
   };
 
-  // 四構面雷達圖
-  const getRadarChartOption = () => {
-    if (!dashboardSummary) {
-      return { title: { text: '載入中...' } };
+  // 根據選中的狀態篩選 KPI
+  const filteredKPIs = selectedStatus
+    ? kpis.filter((k) => {
+        if (selectedStatus === 'red') {
+          return k.status === 'red' || !k.status;
+        }
+        return k.status === selectedStatus;
+      })
+    : [];
+
+  const getStatusColor = (status?: string) => {
+    switch (status) {
+      case 'green':
+        return 'bg-green-500';
+      case 'yellow':
+        return 'bg-yellow-500';
+      case 'red':
+        return 'bg-red-500';
+      default:
+        return 'bg-gray-300';
     }
-
-    const perspectives = dashboardSummary.perspectives;
-    const perspectiveLabels: Record<string, string> = {
-      financial: '財務構面',
-      customer: '客戶構面',
-      internal_process: '內部流程構面',
-      learning_growth: '學習成長構面',
-    };
-
-    return {
-      title: {
-        text: 'BSC 四構面達成率',
-        left: 'center',
-      },
-      radar: {
-        indicator: perspectives.map((p: any) => ({
-          name: perspectiveLabels[p.perspective] || p.perspective,
-          max: 100,
-        })),
-        center: ['50%', '60%'],
-        radius: '70%',
-      },
-      series: [
-        {
-          type: 'radar',
-          data: [
-            {
-              value: perspectives.map((p: any) => p.achievementRate),
-              name: '達成率',
-              areaStyle: {
-                color: 'rgba(59, 130, 246, 0.3)',
-              },
-            },
-          ],
-        },
-      ],
-    };
   };
 
   // KPI 達成率橫條圖
@@ -168,14 +145,6 @@ export default function DashboardPage() {
               年度達成率
             </button>
             <button
-              onClick={() => setViewMode('initiatives')}
-              className={`px-4 py-2 rounded ${
-                viewMode === 'initiatives' ? 'bg-primary-600 text-white' : 'bg-gray-200'
-              }`}
-            >
-              策略專案
-            </button>
-            <button
               onClick={() => setViewMode('okr')}
               className={`px-4 py-2 rounded ${
                 viewMode === 'okr' ? 'bg-primary-600 text-white' : 'bg-gray-200'
@@ -199,7 +168,12 @@ export default function DashboardPage() {
           <>
             {/* 燈號統計 */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-          <div className="bg-white rounded-lg shadow p-6">
+          <div 
+            className={`bg-white rounded-lg shadow p-6 cursor-pointer transition-all hover:shadow-lg ${
+              selectedStatus === 'green' ? 'ring-2 ring-green-500' : ''
+            }`}
+            onClick={() => setSelectedStatus(selectedStatus === 'green' ? null : 'green')}
+          >
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-gray-600">綠燈</p>
@@ -211,7 +185,12 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          <div className="bg-white rounded-lg shadow p-6">
+          <div 
+            className={`bg-white rounded-lg shadow p-6 cursor-pointer transition-all hover:shadow-lg ${
+              selectedStatus === 'yellow' ? 'ring-2 ring-yellow-500' : ''
+            }`}
+            onClick={() => setSelectedStatus(selectedStatus === 'yellow' ? null : 'yellow')}
+          >
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-gray-600">黃燈</p>
@@ -223,7 +202,12 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          <div className="bg-white rounded-lg shadow p-6">
+          <div 
+            className={`bg-white rounded-lg shadow p-6 cursor-pointer transition-all hover:shadow-lg ${
+              selectedStatus === 'red' ? 'ring-2 ring-red-500' : ''
+            }`}
+            onClick={() => setSelectedStatus(selectedStatus === 'red' ? null : 'red')}
+          >
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-gray-600">紅燈</p>
@@ -236,18 +220,82 @@ export default function DashboardPage() {
           </div>
         </div>
 
-            {/* 四構面雷達圖 */}
-            <div className="bg-white rounded-lg shadow mb-6">
-              <div className="p-6 border-b">
-                <h2 className="text-xl font-semibold">四構面達成率雷達圖</h2>
+            {/* KPI 列表（根據選中的狀態顯示） */}
+            {selectedStatus && (
+              <div className="bg-white rounded-lg shadow mb-6">
+                <div className="p-6 border-b flex justify-between items-center">
+                  <h2 className="text-xl font-semibold">
+                    {selectedStatus === 'green' ? '綠燈' : selectedStatus === 'yellow' ? '黃燈' : '紅燈'} KPI 列表
+                    <span className="ml-2 text-sm font-normal text-gray-500">({filteredKPIs.length} 個)</span>
+                  </h2>
+                  <button
+                    onClick={() => setSelectedStatus(null)}
+                    className="text-sm text-gray-600 hover:text-gray-900"
+                  >
+                    關閉
+                  </button>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          KPI ID
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          名稱
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          狀態
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          操作
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {filteredKPIs.length === 0 ? (
+                        <tr>
+                          <td colSpan={4} className="px-6 py-4 text-center text-gray-500">
+                            沒有符合條件的 KPI
+                          </td>
+                        </tr>
+                      ) : (
+                        filteredKPIs.map((kpi) => (
+                          <tr key={kpi.id} className="hover:bg-gray-50">
+                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                              {kpi.kpi_id}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                              {kpi.name_zh}
+                              {kpi.name_en && (
+                                <span className="text-gray-500 ml-2">({kpi.name_en})</span>
+                              )}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <span
+                                className={`inline-block w-3 h-3 rounded-full ${getStatusColor(
+                                  kpi.status
+                                )}`}
+                                title={kpi.status || '無狀態'}
+                              />
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                              <Link
+                                href={`/kpi/${kpi.id}`}
+                                className="text-blue-600 hover:text-blue-900"
+                              >
+                                查看詳情
+                              </Link>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
               </div>
-              <div className="p-6">
-                <ReactECharts
-                  option={getRadarChartOption()}
-                  style={{ height: '400px' }}
-                />
-              </div>
-            </div>
+            )}
 
             {/* KPI 達成率橫條圖 */}
             <div className="bg-white rounded-lg shadow mb-6">
@@ -264,80 +312,7 @@ export default function DashboardPage() {
           </>
         )}
 
-        {/* 視圖2：策略專案 */}
-        {viewMode === 'initiatives' && (
-          <div className="space-y-6">
-            {/* 策略專案統計 */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <div className="bg-white rounded-lg shadow p-4">
-                <p className="text-gray-600 text-sm">總專案數</p>
-                <p className="text-2xl font-bold">{initiatives.length}</p>
-              </div>
-              <div className="bg-white rounded-lg shadow p-4">
-                <p className="text-gray-600 text-sm">進行中</p>
-                <p className="text-2xl font-bold text-blue-600">
-                  {initiatives.filter(i => i.status === 'in_progress' || i.status === 'active').length}
-                </p>
-              </div>
-              <div className="bg-white rounded-lg shadow p-4">
-                <p className="text-gray-600 text-sm">已完成</p>
-                <p className="text-2xl font-bold text-green-600">
-                  {initiatives.filter(i => i.status === 'completed').length}
-                </p>
-              </div>
-              <div className="bg-white rounded-lg shadow p-4">
-                <p className="text-gray-600 text-sm">平均進度</p>
-                <p className="text-2xl font-bold text-purple-600">
-                  {initiatives.length > 0 
-                    ? Math.round(initiatives.reduce((sum, i) => sum + (i.progress || 0), 0) / initiatives.length)
-                    : 0}%
-                </p>
-              </div>
-            </div>
-
-            {/* 策略專案列表 */}
-            <div className="bg-white rounded-lg shadow">
-              <div className="p-4 border-b flex justify-between items-center">
-                <h2 className="text-xl font-semibold">策略專案總覽</h2>
-                <Link href="/initiatives" className="text-primary-600 hover:underline text-sm">
-                  查看全部 →
-                </Link>
-              </div>
-              <div className="p-4 space-y-3">
-                {initiatives.slice(0, 5).map((initiative) => (
-                  <div key={initiative.id} className="p-4 bg-gray-50 rounded-lg">
-                    <div className="flex justify-between items-start mb-2">
-                      <Link href={`/initiatives/${initiative.id}`} className="font-medium hover:text-primary-600">
-                        {initiative.name}
-                      </Link>
-                      <span className={`px-2 py-1 text-xs rounded ${
-                        initiative.status === 'completed' ? 'bg-green-100 text-green-800' :
-                        initiative.status === 'in_progress' || initiative.status === 'active' ? 'bg-blue-100 text-blue-800' :
-                        'bg-gray-100 text-gray-800'
-                      }`}>
-                        {initiative.status === 'completed' ? '已完成' :
-                         initiative.status === 'in_progress' || initiative.status === 'active' ? '進行中' :
-                         initiative.status === 'planned' ? '規劃中' : initiative.status}
-                      </span>
-                    </div>
-                    <div className="w-full bg-gray-200 rounded-full h-2">
-                      <div 
-                        className="bg-primary-600 h-2 rounded-full" 
-                        style={{ width: `${initiative.progress || 0}%` }}
-                      />
-                    </div>
-                    <p className="text-xs text-gray-500 mt-1">進度: {initiative.progress || 0}%</p>
-                  </div>
-                ))}
-                {initiatives.length === 0 && (
-                  <p className="text-gray-500 text-center py-4">尚無策略專案</p>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* 視圖3：OKR 進度 */}
+        {/* 視圖2：OKR 進度 */}
         {viewMode === 'okr' && (
           <div className="space-y-6">
             {/* OKR 統計 */}
@@ -415,33 +390,38 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* 視圖4：下鑽路徑 */}
+        {/* 視圖3：下鑽路徑 */}
         {viewMode === 'drilldown' && (
           <div className="bg-white rounded-lg shadow p-6">
             <h2 className="text-xl font-semibold mb-4">下鑽路徑</h2>
             <p className="text-gray-600 mb-4">
-              從 BSC 構面出發，追蹤策略執行的完整路徑：
+              從 BSC 構面出發，追蹤策略執行的完整路徑。KPI 作為持續監控的指標（結果），策略專案是改善 KPI 的做法，OKR 的關鍵結果（KR）可引用 KPI，任務則透過 KR 與 KPI 建立關聯：
             </p>
             <div className="flex items-center justify-center space-x-2 text-sm bg-gray-50 p-4 rounded-lg mb-6">
               <span className="px-3 py-1 bg-red-100 text-red-800 rounded">BSC 構面</span>
               <span>→</span>
+              <span className="px-3 py-1 bg-yellow-100 text-yellow-800 rounded">KPI（持續且重要目標）</span>
+              <span>→</span>
               <span className="px-3 py-1 bg-blue-100 text-blue-800 rounded">策略專案</span>
               <span>→</span>
-              <span className="px-3 py-1 bg-purple-100 text-purple-800 rounded">OKR</span>
+              <span className="px-3 py-1 bg-purple-100 text-purple-800 rounded">OKR/KR</span>
               <span>→</span>
               <span className="px-3 py-1 bg-green-100 text-green-800 rounded">任務</span>
-              <span>→</span>
-              <span className="px-3 py-1 bg-yellow-100 text-yellow-800 rounded">KPI</span>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <Link href="/kpi" className="block p-4 border rounded-lg hover:bg-gray-50 transition-colors">
+                <h3 className="font-medium text-lg mb-2">📈 持續且重要目標（KPI）</h3>
+                <p className="text-sm text-gray-600">查看所有 KPI 及其達成狀況（結果指標）</p>
+                <p className="text-primary-600 text-sm mt-2">共 {kpis.length} 個 KPI →</p>
+              </Link>
               <Link href="/initiatives" className="block p-4 border rounded-lg hover:bg-gray-50 transition-colors">
                 <h3 className="font-medium text-lg mb-2">📋 策略專案</h3>
-                <p className="text-sm text-gray-600">查看所有策略專案及其執行進度</p>
+                <p className="text-sm text-gray-600">查看所有策略專案及其執行進度（改善 KPI 的做法）</p>
                 <p className="text-primary-600 text-sm mt-2">共 {initiatives.length} 個專案 →</p>
               </Link>
               <Link href="/okr" className="block p-4 border rounded-lg hover:bg-gray-50 transition-colors">
                 <h3 className="font-medium text-lg mb-2">🎯 OKR 管理</h3>
-                <p className="text-sm text-gray-600">查看目標與關鍵結果的達成情況</p>
+                <p className="text-sm text-gray-600">查看目標與關鍵結果的達成情況（分段里程碑）</p>
                 <p className="text-primary-600 text-sm mt-2">共 {okrs.length} 個 OKR →</p>
               </Link>
             </div>
@@ -484,7 +464,15 @@ export default function DashboardPage() {
                       {kpi.name_zh}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {kpi.bsc_perspective}
+                      {(() => {
+                        const labels: Record<string, string> = {
+                          financial: '財務構面',
+                          customer: '客戶構面',
+                          internal_process: '內部流程構面',
+                          learning_growth: '學習成長構面',
+                        };
+                        return labels[kpi.bsc_perspective] || kpi.bsc_perspective;
+                      })()}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span

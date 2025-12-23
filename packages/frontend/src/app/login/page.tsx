@@ -18,10 +18,21 @@ export default function LoginPage() {
 
     try {
       const response = await authApi.login(username, password);
-      const { token } = response.data;
+      const { token, user } = response.data;
       
       // 儲存 token 到 localStorage
       localStorage.setItem('token', token);
+      
+      // 儲存用戶資訊到 localStorage
+      if (user) {
+        localStorage.setItem('currentUser', JSON.stringify({
+          id: user.id,
+          username: user.username,
+          email: user.email,
+          fullName: user.fullName || user.full_name,
+          roles: user.roles || [],
+        }));
+      }
       
       // 重定向到首頁或原來的頁面
       router.push('/');

@@ -12,7 +12,7 @@ const createKPISchema = z.object({
   kpi_id: z.string().min(1),
   name_zh: z.string().min(1),
   name_en: z.string().optional(),
-  bsc_perspective: z.enum(['financial', 'customer', 'internal_process', 'learning_growth']),
+  bsc_perspective: z.string().optional(),
   definition: z.string().min(1),
   formula: z.string().min(1),
   data_source: z.string().min(1),
@@ -34,7 +34,12 @@ router.get('/', authenticate, async (req: AuthRequest, res) => {
   try {
     const result = await pool.query(
       `SELECT k.*, 
-              (SELECT COUNT(*) FROM kpi_versions kv WHERE kv.kpi_id = k.id) as version_count
+              (SELECT COUNT(*) FROM kpi_versions kv WHERE kv.kpi_id = k.id) as version_count,
+              (SELECT kv.status 
+               FROM kpi_values kv 
+               WHERE kv.kpi_id = k.id 
+               ORDER BY kv.period DESC 
+               LIMIT 1) as status
        FROM kpi_registry k
        ORDER BY k.created_at DESC`
     );
@@ -58,20 +63,30 @@ router.get('/:id', authenticate, async (req: AuthRequest, res) => {
       return res.status(404).json({ error: 'KPI 不存在' });
     }
 
-    const versionsResult = await pool.query(
-      'SELECT * FROM kpi_versions WHERE kpi_id = $1 ORDER BY version DESC',
-      [id]
-    );
-
-    const valuesResult = await pool.query(
-      'SELECT * FROM kpi_values WHERE kpi_id = $1 ORDER BY period DESC LIMIT 12',
-      [id]
-    );
+    const [versionsResult, valuesResult, initiativesResult] = await Promise.all([
+      pool.query(
+        'SELECT * FROM kpi_versions WHERE kpi_id = $1 ORDER BY version DESC',
+        [id]
+      ),
+      pool.query(
+        'SELECT * FROM kpi_values WHERE kpi_id = $1 ORDER BY period DESC LIMIT 12',
+        [id]
+      ),
+      pool.query(
+        `SELECT i.id, i.initiative_id, i.name_zh, i.status, ik.expected_impact
+         FROM initiatives i
+         INNER JOIN initiative_kpis ik ON i.id = ik.initiative_id
+         WHERE ik.kpi_id = $1
+         ORDER BY i.name_zh`,
+        [id]
+      ),
+    ]);
 
     res.json({
       ...kpiResult.rows[0],
       versions: versionsResult.rows,
       recent_values: valuesResult.rows,
+      initiatives: initiativesResult.rows,
     });
   } catch (error) {
     console.error('Error fetching KPI:', error);
@@ -106,16 +121,15 @@ router.post('/', authenticate, async (req: AuthRequest, res) => {
 
     const result = await pool.query(
       `INSERT INTO kpi_registry (
-        kpi_id, name_zh, name_en, bsc_perspective, definition, formula,
+        kpi_id, name_zh, name_en, definition, formula,
         data_source, data_steward, update_frequency, target_value, thresholds,
         evidence_requirements, applicable_programs, created_by
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
       RETURNING *`,
       [
         validated.kpi_id,
         validated.name_zh,
         validated.name_en || null,
-        validated.bsc_perspective,
         validated.definition,
         validated.formula,
         validated.data_source,
@@ -460,6 +474,107 @@ router.delete('/:id/values/:period/exception', authenticate, async (req: AuthReq
     res.status(500).json({ error: '取消例外標記失敗' });
   }
 });
+
+// 刪除 KPI
+router.delete('/:id', authenticate, async (req: AuthRequest, res) => {
+  const client = await pool.connect();
+  try {
+    const { id } = req.params;
+
+    await client.query('BEGIN');
+
+    // 檢查 KPI 是否存在
+    const kpiResult = await client.query(
+      'SELECT * FROM kpi_registry WHERE id = $1',
+      [id]
+    );
+
+    if (kpiResult.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'KPI 不存在' });
+    }
+
+    // 檢查是否有任務關聯（tasks.kpi_id 沒有 CASCADE，需要手動處理）
+    const tasksResult = await client.query(
+      'SELECT COUNT(*) as count FROM tasks WHERE kpi_id = $1',
+      [id]
+    );
+    const taskCount = parseInt(tasksResult.rows[0].count);
+
+    if (taskCount > 0) {
+      // 將任務的 kpi_id 設為 NULL
+      await client.query(
+        'UPDATE tasks SET kpi_id = NULL WHERE kpi_id = $1',
+        [id]
+      );
+    }
+
+    // 刪除 KPI（CASCADE 會自動刪除 kpi_versions, kpi_values, initiative_kpis）
+    await client.query('DELETE FROM kpi_registry WHERE id = $1', [id]);
+
+    await client.query('COMMIT');
+
+    res.json({ 
+      success: true, 
+      message: 'KPI 已刪除',
+      affected_tasks: taskCount 
+    });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Error deleting KPI:', error);
+    res.status(500).json({ error: '刪除 KPI 失敗' });
+  } finally {
+    client.release();
+  }
+});
+
+// 更新 KPI 關聯的策略專案
+router.put('/:id/initiatives', authenticate, async (req: AuthRequest, res) => {
+  const client = await pool.connect();
+  try {
+    const { id } = req.params;
+    const { initiative_ids } = req.body;
+
+    if (!Array.isArray(initiative_ids)) {
+      return res.status(400).json({ error: 'initiative_ids 必須是陣列' });
+    }
+
+    await client.query('BEGIN');
+
+    // 刪除現有關聯
+    await client.query('DELETE FROM initiative_kpis WHERE kpi_id = $1', [id]);
+
+    // 新增關聯
+    for (const initiativeId of initiative_ids) {
+      await client.query(
+        `INSERT INTO initiative_kpis (initiative_id, kpi_id, expected_impact)
+         VALUES ($1, $2, 'positive')`,
+        [initiativeId, id]
+      );
+    }
+
+    await client.query('COMMIT');
+
+    // 回傳更新後的關聯
+    const result = await pool.query(
+      `SELECT i.id, i.initiative_id, i.name_zh, i.status
+       FROM initiatives i
+       INNER JOIN initiative_kpis ik ON i.id = ik.initiative_id
+       WHERE ik.kpi_id = $1
+       ORDER BY i.name_zh`,
+      [id]
+    );
+
+    res.json(result.rows);
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Error updating KPI initiatives:', error);
+    res.status(500).json({ error: '更新關聯策略專案失敗' });
+  } finally {
+    client.release();
+  }
+});
+
 
 export default router;
 

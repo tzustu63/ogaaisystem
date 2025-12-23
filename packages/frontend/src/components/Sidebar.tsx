@@ -17,7 +17,6 @@ const menuItems: MenuItem[] = [
     href: '/dashboard',
     children: [
       { title: 'BSC 四構面總覽', href: '/dashboard' },
-      { title: '戰略地圖', href: '/dashboard/strategy-map' },
       { title: '持續且重要目標', href: '/kpi' },
     ],
   },
@@ -27,7 +26,6 @@ const menuItems: MenuItem[] = [
     children: [
       { title: '策略專案', href: '/initiatives' },
       { title: 'OKR 管理', href: '/okr' },
-      { title: 'RACI 模板', href: '/raci' },
     ],
   },
   {
@@ -35,7 +33,7 @@ const menuItems: MenuItem[] = [
     href: '/kanban',
     children: [
       { title: 'Kanban 看板', href: '/kanban' },
-      { title: 'Incident 管理', href: '/incidents' },
+      { title: '緊急事件管理', href: '/incidents' },
       { title: 'PDCA 循環', href: '/pdca' },
     ],
   },
@@ -96,6 +94,7 @@ export default function Sidebar() {
   const [loading, setLoading] = useState(true);
   const [mounted, setMounted] = useState(false);
   const [expandedMenus, setExpandedMenus] = useState<Set<string>>(new Set());
+  const [hasToken, setHasToken] = useState(false);
 
   // 根據當前路徑決定展開哪個選單
   const getActiveMenuTitle = useCallback((path: string): string | null => {
@@ -123,21 +122,48 @@ export default function Sidebar() {
   const fetchCurrentUser = async () => {
     try {
       const token = localStorage.getItem('token');
+      setHasToken(!!token);
       if (!token) {
         setLoading(false);
         return;
       }
+      
+      // 嘗試從 localStorage 讀取保存的用戶資訊
+      const savedUserStr = localStorage.getItem('currentUser');
+      if (savedUserStr) {
+        try {
+          const savedUser = JSON.parse(savedUserStr);
+          setCurrentUser(savedUser);
+        } catch (e) {
+          // 解析失敗，忽略
+        }
+      }
+      
       const res = await authApi.getMe();
       const userData = res.data.user || res.data;
-      setCurrentUser({
+      const user = {
         id: userData.id,
         username: userData.username,
         email: userData.email,
         fullName: userData.full_name || userData.fullName,
         roles: userData.roles || [],
-      });
+      };
+      
+      // 保存用戶資訊到 localStorage
+      localStorage.setItem('currentUser', JSON.stringify(user));
+      setCurrentUser(user);
     } catch (error) {
       console.error('Error fetching current user:', error);
+      // 如果 API 失敗，嘗試使用保存的用戶資訊
+      const savedUserStr = localStorage.getItem('currentUser');
+      if (savedUserStr) {
+        try {
+          const savedUser = JSON.parse(savedUserStr);
+          setCurrentUser(savedUser);
+        } catch (e) {
+          // 解析失敗，保持 currentUser 為 null
+        }
+      }
     } finally {
       setLoading(false);
     }
@@ -145,6 +171,7 @@ export default function Sidebar() {
 
   const handleLogout = () => {
     localStorage.removeItem('token');
+    localStorage.removeItem('currentUser');
     router.push('/login');
   };
 
@@ -165,12 +192,12 @@ export default function Sidebar() {
     if (pathname === '/login') {
       return null;
     }
-    return <div className="w-64 bg-gray-800 min-h-screen"></div>;
+    return <div className="w-64 bg-gray-800 h-screen"></div>;
   }
 
   return (
-    <div className="w-64 bg-gray-800 text-white min-h-screen p-4 flex flex-col">
-      <div className="mb-8">
+    <div className="w-64 bg-gray-800 text-white h-screen sticky top-0 flex flex-col">
+      <div className="p-4 mb-4">
         <Link href="/">
           <h1 className="text-xl font-bold hover:text-gray-300 cursor-pointer transition-colors">
             策略執行管理系統
@@ -178,7 +205,7 @@ export default function Sidebar() {
         </Link>
       </div>
 
-      <nav className="flex-1">
+      <nav className="flex-1 overflow-y-auto px-4">
         {menuItems.map((item) => {
           const isExpanded = expandedMenus.has(item.title);
           const isActive = isPathInMenuItem(pathname, item);
@@ -246,13 +273,22 @@ export default function Sidebar() {
         })}
       </nav>
 
-      {/* 用戶信息和登出按鈕 */}
-      <div className="mt-auto pt-4 border-t border-gray-700">
-        {!loading && currentUser && (
+      {/* 用戶信息和登出按鈕 - 登出按鈕永遠顯示 */}
+      <div className="mt-auto p-4 border-t border-gray-700 flex-shrink-0">
+        {loading ? (
+          <div className="mb-3 px-4 py-2">
+            <div className="text-sm text-gray-400">載入中...</div>
+          </div>
+        ) : currentUser ? (
           <div className="mb-3">
             <div className="px-4 py-2">
-              <div className="text-sm font-medium">{currentUser.fullName || currentUser.username}</div>
-              <div className="text-xs text-gray-400 mt-1">{currentUser.email}</div>
+              <div className="text-sm font-medium">{currentUser.username}</div>
+              {currentUser.fullName && currentUser.fullName !== currentUser.username && (
+                <div className="text-xs text-gray-400 mt-1">{currentUser.fullName}</div>
+              )}
+              {currentUser.email && (
+                <div className="text-xs text-gray-400 mt-1">{currentUser.email}</div>
+              )}
               {currentUser.roles && currentUser.roles.length > 0 && (
                 <div className="flex flex-wrap gap-1 mt-2">
                   {currentUser.roles.map((role, index) => (
@@ -266,6 +302,14 @@ export default function Sidebar() {
                 </div>
               )}
             </div>
+          </div>
+        ) : hasToken ? (
+          <div className="mb-3 px-4 py-2">
+            <div className="text-sm text-gray-400">載入用戶資訊中...</div>
+          </div>
+        ) : (
+          <div className="mb-3 px-4 py-2">
+            <div className="text-sm text-gray-400">未登入</div>
           </div>
         )}
         <button
