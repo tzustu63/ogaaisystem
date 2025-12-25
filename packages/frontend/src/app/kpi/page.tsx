@@ -9,7 +9,6 @@ interface KPI {
   kpi_id: string;
   name_zh: string;
   name_en?: string;
-  bsc_perspective: string;
   status?: string;
   version_count?: number;
 }
@@ -43,16 +42,6 @@ export default function KPIPage() {
     }
   };
 
-  const getPerspectiveLabel = (perspective: string) => {
-    const labels: Record<string, string> = {
-      financial: '財務構面',
-      customer: '客戶構面',
-      internal_process: '內部流程構面',
-      learning_growth: '學習成長構面',
-    };
-    return labels[perspective] || perspective;
-  };
-
   if (loading) {
     return <div className="p-8">載入中...</div>;
   }
@@ -81,9 +70,6 @@ export default function KPIPage() {
                   名稱
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  BSC 構面
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   狀態
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -105,9 +91,6 @@ export default function KPIPage() {
                     {kpi.name_en && (
                       <span className="text-gray-500 ml-2">({kpi.name_en})</span>
                     )}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {getPerspectiveLabel(kpi.bsc_perspective)}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <span

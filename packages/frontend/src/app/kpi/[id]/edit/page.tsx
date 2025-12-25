@@ -10,7 +10,6 @@ interface KPIFormData {
   kpi_id: string;
   name_zh: string;
   name_en: string;
-  bsc_perspective: string;
   definition: string;
   formula: string;
   data_source: string;
@@ -40,7 +39,6 @@ interface NewInitiativeForm {
   name_zh: string;
   initiative_type: string;
   responsible_unit: string;
-  bsc_perspective: string;
   status: string;
 }
 
@@ -66,7 +64,6 @@ export default function EditKPIPage() {
     name_zh: '',
     initiative_type: '',
     responsible_unit: '',
-    bsc_perspective: 'financial',
     status: 'planning',
   });
 
@@ -74,7 +71,6 @@ export default function EditKPIPage() {
     kpi_id: '',
     name_zh: '',
     name_en: '',
-    bsc_perspective: 'financial',
     definition: '',
     formula: '',
     data_source: '',
@@ -105,7 +101,6 @@ export default function EditKPIPage() {
           kpi_id: kpi.kpi_id || '',
           name_zh: kpi.name_zh || '',
           name_en: kpi.name_en || '',
-          bsc_perspective: kpi.bsc_perspective || 'financial',
           definition: kpi.definition || '',
           formula: kpi.formula || '',
           data_source: kpi.data_source || '',
@@ -232,7 +227,6 @@ export default function EditKPIPage() {
         name_zh: '',
         initiative_type: '',
         responsible_unit: '',
-        bsc_perspective: 'financial',
         status: 'planning',
       });
       fetchNextInitiativeId();
@@ -328,41 +322,21 @@ export default function EditKPIPage() {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  BSC 構面 <span className="text-red-500">*</span>
-                </label>
-                <select
-                  name="bsc_perspective"
-                  value={formData.bsc_perspective}
-                  onChange={handleInputChange}
-                  required
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="financial">財務構面</option>
-                  <option value="customer">客戶構面</option>
-                  <option value="internal_process">內部流程構面</option>
-                  <option value="learning_growth">學習成長構面</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  更新頻率 <span className="text-red-500">*</span>
-                </label>
-                <select
-                  name="update_frequency"
-                  value={formData.update_frequency}
-                  onChange={handleInputChange}
-                  required
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="monthly">每月</option>
-                  <option value="quarterly">每季</option>
-                  <option value="ad_hoc">不定期</option>
-                </select>
-              </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                更新頻率 <span className="text-red-500">*</span>
+              </label>
+              <select
+                name="update_frequency"
+                value={formData.update_frequency}
+                onChange={handleInputChange}
+                required
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="monthly">每月</option>
+                <option value="quarterly">每季</option>
+                <option value="ad_hoc">不定期</option>
+              </select>
             </div>
           </div>
 
@@ -423,14 +397,20 @@ export default function EditKPIPage() {
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   資料負責人 <span className="text-red-500">*</span>
                 </label>
-                <input
-                  type="text"
+                <select
                   name="data_steward"
                   value={formData.data_steward}
                   onChange={handleInputChange}
                   required
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
+                >
+                  <option value="">請選擇負責人</option>
+                  {(systemOptions['person'] || []).map((person) => (
+                    <option key={person.id} value={person.label}>
+                      {person.label}
+                    </option>
+                  ))}
+                </select>
               </div>
             </div>
           </div>
@@ -744,22 +724,6 @@ export default function EditKPIPage() {
                       <option value="Operations">營運部</option>
                     </>
                   )}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  BSC 構面 <span className="text-red-500">*</span>
-                </label>
-                <select
-                  value={newInitiative.bsc_perspective}
-                  onChange={(e) => setNewInitiative(prev => ({ ...prev, bsc_perspective: e.target.value }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="financial">財務構面</option>
-                  <option value="customer">客戶構面</option>
-                  <option value="internal_process">內部流程構面</option>
-                  <option value="learning_growth">學習成長構面</option>
                 </select>
               </div>
 

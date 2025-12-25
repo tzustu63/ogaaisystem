@@ -119,7 +119,6 @@ interface KPI {
   kpi_id: string;
   name_zh: string;
   name_en?: string;
-  bsc_perspective: string;
   definition: string;
   formula: string;
   data_source: string;
@@ -184,15 +183,6 @@ export default function KPIDetailPage() {
     }
   };
 
-  const getPerspectiveLabel = (perspective: string) => {
-    const labels: Record<string, string> = {
-      financial: '財務構面',
-      customer: '客戶構面',
-      internal_process: '內部流程構面',
-      learning_growth: '學習成長構面',
-    };
-    return labels[perspective] || perspective;
-  };
 
   // 準備趨勢圖資料
   const getTrendChartOption = () => {
@@ -310,10 +300,6 @@ export default function KPIDetailPage() {
             <div>
               <h3 className="font-semibold mb-2">基本資訊</h3>
               <dl className="space-y-2 text-sm">
-                <div>
-                  <dt className="text-gray-600">BSC 構面</dt>
-                  <dd>{getPerspectiveLabel(kpi.bsc_perspective)}</dd>
-                </div>
                 <div>
                   <dt className="text-gray-600">定義</dt>
                   <dd className="mt-1">{kpi.definition}</dd>

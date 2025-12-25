@@ -48,6 +48,7 @@ import authRoutes from './routes/auth';
 import uploadRoutes from './routes/upload';
 import systemOptionsRoutes from './routes/system-options';
 import chatRoutes from './routes/chat';
+import aiSettingsRoutes from './routes/ai-settings';
 import { startSchedulers } from './cron/scheduler';
 import { pool } from './config/database';
 import { auditLog } from './middleware/audit';
@@ -78,6 +79,7 @@ app.use('/api/settings', settingsRoutes);
 app.use('/api/upload', uploadRoutes);
 app.use('/api/system-options', systemOptionsRoutes);
 app.use('/api/chat', chatRoutes);
+app.use('/api/ai-settings', aiSettingsRoutes);
 
 
 // 啟動排程任務

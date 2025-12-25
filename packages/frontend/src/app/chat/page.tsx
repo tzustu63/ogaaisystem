@@ -163,9 +163,39 @@ export default function ChatPage() {
       });
     } catch (error: any) {
       console.error('Error sending message:', error);
-      alert(error.response?.data?.details || '發送訊息失敗');
-      // Remove temp message on error
-      setMessages(prev => prev.filter(m => m.id !== 'temp-user'));
+      const errorMessage = error.response?.data?.details || error.response?.data?.error || '發送訊息失敗';
+
+      // Check for quota exceeded error
+      if (errorMessage.includes('429') || errorMessage.includes('quota') || errorMessage.includes('Too Many Requests')) {
+        // Show quota error as AI message instead of alert
+        setMessages(prev => {
+          const withoutTemp = prev.filter(m => m.id !== 'temp-user');
+          return [
+            ...withoutTemp,
+            { ...prev.find(m => m.id === 'temp-user')!, id: 'user-' + Date.now() },
+            {
+              id: 'error-' + Date.now(),
+              role: 'assistant' as const,
+              content: `⚠️ **API 配額超限通知**
+
+目前 Google Gemini API 的免費配額已用完（每天 20 次請求限制）。
+
+**解決方案：**
+
+1. **等待配額重置** - 免費配額會在一段時間後自動重置
+2. **稍後再試** - 建議等待約 30 秒後重試
+3. **升級付費方案** - 前往 Google AI Studio 設定付費方案以獲得更高配額
+
+如有問題，請聯繫系統管理員。`,
+              created_at: new Date().toISOString(),
+            },
+          ];
+        });
+      } else {
+        alert(errorMessage);
+        // Remove temp message on error
+        setMessages(prev => prev.filter(m => m.id !== 'temp-user'));
+      }
     } finally {
       setLoading(false);
     }

@@ -57,6 +57,7 @@ const menuItems: MenuItem[] = [
     children: [
       { title: '選項管理', href: '/settings/options' },
       { title: '用戶與權限', href: '/settings/users' },
+      { title: 'AI 設定', href: '/settings/ai' },
       { title: '通知設定', href: '/settings/notifications' },
       { title: '稽核日誌', href: '/settings/audit' },
       { title: '個資合規', href: '/settings/gdpr' },
@@ -228,16 +229,16 @@ export default function Sidebar() {
           return (
             <div key={item.title} className="mb-2">
               {/* 主選單項目 */}
-              <button
-                onClick={() => toggleMenu(item.title)}
-                className={`w-full flex items-center justify-between px-4 py-2.5 rounded-lg transition-all duration-200 ${
-                  isActive
-                    ? 'bg-blue-600 text-white'
-                    : 'hover:bg-gray-700 text-gray-300'
-                }`}
-              >
-                <span className="font-medium">{item.title}</span>
-                {item.children && (
+              {item.children ? (
+                <button
+                  onClick={() => toggleMenu(item.title)}
+                  className={`w-full flex items-center justify-between px-4 py-2.5 rounded-lg transition-all duration-200 ${
+                    isActive
+                      ? 'bg-blue-600 text-white'
+                      : 'hover:bg-gray-700 text-gray-300'
+                  }`}
+                >
+                  <span className="font-medium">{item.title}</span>
                   <svg
                     className={`w-4 h-4 transition-transform duration-200 ${
                       isExpanded ? 'rotate-180' : ''
@@ -253,8 +254,19 @@ export default function Sidebar() {
                       d="M19 9l-7 7-7-7"
                     />
                   </svg>
-                )}
-              </button>
+                </button>
+              ) : (
+                <Link
+                  href={item.href}
+                  className={`w-full flex items-center justify-between px-4 py-2.5 rounded-lg transition-all duration-200 ${
+                    isActive
+                      ? 'bg-blue-600 text-white'
+                      : 'hover:bg-gray-700 text-gray-300'
+                  }`}
+                >
+                  <span className="font-medium">{item.title}</span>
+                </Link>
+              )}
 
               {/* 子選單 - 帶動畫效果 */}
               {item.children && (

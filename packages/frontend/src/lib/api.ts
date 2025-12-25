@@ -195,5 +195,14 @@ export const chatApi = {
   getModels: () => api.get('/chat/models'),
 };
 
+// AI Settings API
+export const aiSettingsApi = {
+  getAll: () => api.get('/ai-settings'),
+  get: (key: string) => api.get(`/ai-settings/${key}`),
+  update: (key: string, data: { setting_value: string; description?: string }) =>
+    api.put(`/ai-settings/${key}`, data),
+  reset: (key: string) => api.post(`/ai-settings/reset/${key}`),
+};
+
 export default api;
 

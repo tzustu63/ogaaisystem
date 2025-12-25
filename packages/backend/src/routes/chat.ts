@@ -19,69 +19,94 @@ export const AVAILABLE_MODELS = [
 // Default model
 const DEFAULT_MODEL = 'gemini-2.5-flash';
 
-// Database schema description for AI context
-const DATABASE_SCHEMA = `
-你是一個專業的資料庫助手，協助使用者查詢 OGA AI System 的資料。
+// Helper function to get AI setting from database
+async function getAISetting(key: string): Promise<string | null> {
+  try {
+    const result = await pool.query(
+      `SELECT setting_value FROM ai_settings WHERE setting_key = $1`,
+      [key]
+    );
+    return result.rows.length > 0 ? result.rows[0].setting_value : null;
+  } catch (error) {
+    console.error('Error fetching AI setting:', error);
+    return null;
+  }
+}
+
+// Helper function to get all AI settings for building prompts
+async function getAllAISettings(): Promise<Record<string, string>> {
+  try {
+    const result = await pool.query(
+      `SELECT setting_key, setting_value FROM ai_settings`
+    );
+    const settings: Record<string, string> = {};
+    for (const row of result.rows) {
+      settings[row.setting_key] = row.setting_value;
+    }
+    return settings;
+  } catch (error) {
+    console.error('Error fetching AI settings:', error);
+    return {};
+  }
+}
+
+// Default Database schema description for AI context (used as fallback)
+const DEFAULT_DATABASE_SCHEMA = `
+你是一個專業的資料庫助手，協助使用者查詢 OGA AI System（策略執行管理系統）的資料。
 
 資料庫架構說明：
 
-1. 使用者與組織
-- users: 使用者資料 (id, name, email, department_id, role_id, created_at)
-- departments: 部門資料 (id, name, parent_id, created_at)
-- roles: 角色資料 (id, name, permissions, created_at)
+1. 使用者
+- users: 使用者資料 (id, username, email, full_name, department, is_active, created_at)
 
 2. KPI 管理
-- kpi_registry: KPI 註冊表 (id, kpi_code, kpi_name, unit, frequency, owner_id, created_at)
-- kpi_values: KPI 數據 (id, kpi_id, period_start, period_end, target_value, actual_value, created_at)
+- kpi_registry: KPI 註冊表 (id, kpi_id, name_zh, name_en, definition, formula, data_source, data_steward, update_frequency, target_value, thresholds, created_at)
+- kpi_values: KPI 數據 (id, kpi_id, period, value, target_value, status, notes, created_at)
+- kpi_versions: KPI 版本歷史 (id, kpi_id, version_number, changes, created_at)
 
-3. OKR 管理
-- okrs: 目標 (id, title, description, owner_id, parent_id, start_date, end_date, status, created_at)
-- key_results: 關鍵結果 (id, okr_id, title, target_value, current_value, unit, weight, status, created_at)
-- kr_kpi_mapping: KR-KPI 映射 (kr_id, kpi_id, contribution_weight, created_at)
+3. 策略專案（Initiatives）
+- initiatives: 策略專案 (id, initiative_id, name_zh, name_en, initiative_type, status, risk_level, start_date, end_date, budget, responsible_unit, created_at)
+- initiative_kpis: 策略專案與 KPI 關聯 (initiative_id, kpi_id, created_at)
 
-4. 策略專案
-- initiatives: 策略專案 (id, title, description, owner_id, start_date, end_date, budget, status, priority, created_at)
-- initiative_okr_mapping: 專案-OKR 映射 (initiative_id, okr_id, contribution_weight, created_at)
+4. OKR 管理
+- okrs: 目標與關鍵結果 (id, initiative_id, quarter, objective, created_at)
+- key_results: 關鍵結果 (id, okr_id, kr_number, description, target_value, current_value, unit, status, progress, kpi_id, created_at)
 
 5. 任務管理
-- tasks: 任務 (id, title, description, assignee_id, parent_id, status, priority, due_date, kr_id, created_at)
-- task_attachments: 任務附件 (id, task_id, filename, file_path, uploaded_by, created_at)
+- tasks: 任務 (id, title, description, status, priority, due_date, assignee_id, kr_id, initiative_id, kpi_id, created_at)
+  - status 可能值: 'todo', 'in_progress', 'review', 'done'
+  - priority 可能值: 'low', 'medium', 'high', 'urgent'
 
 6. PDCA 循環
-- pdca_cycles: PDCA 循環 (id, title, phase, target_id, target_type, owner_id, start_date, end_date, status, created_at)
-- pdca_actions: PDCA 行動項目 (id, cycle_id, description, assignee_id, due_date, status, created_at)
+- pdca_cycles: PDCA 循環 (id, name, initiative_id, okr_id, status, plan_content, do_content, check_content, act_content, created_at)
 
 7. 緊急事件
-- incidents: 緊急事件 (id, title, description, severity, status, reporter_id, assignee_id, created_at, resolved_at)
-
-8. 看板管理
-- boards: 看板 (id, name, type, owner_id, created_at)
-- board_columns: 看板欄位 (id, board_id, name, position, created_at)
-- board_items: 看板項目 (id, board_id, column_id, task_id, position, created_at)
+- incidents: 緊急事件 (id, title, description, severity, status, created_at)
 
 重要規則：
 1. 只生成 SELECT 查詢，不允許 INSERT、UPDATE、DELETE
-2. 不查詢敏感欄位：password, salt, api_key, secret
-3. 使用參數化查詢防止 SQL 注入
-4. 限制查詢結果最多 100 筆（使用 LIMIT 100）
-5. 優先使用 JOIN 而非子查詢以提高效能
-6. 日期格式使用 PostgreSQL 標準格式
-7. 使用中文回答使用者問題
+2. 不查詢敏感欄位：password, password_hash, api_key, secret, token
+3. 限制查詢結果最多 100 筆（使用 LIMIT 100）
+4. 優先使用 JOIN 而非子查詢以提高效能
+5. 日期格式使用 PostgreSQL 標準格式
+6. 使用中文回答使用者問題
+7. 如果使用者問的問題不能轉換成 SQL，請返回 "SELECT 1 WHERE false" 並解釋原因
 
 範例問題與查詢：
-Q: "顯示所有進行中的 OKR"
-A: SELECT id, title, description, status, start_date, end_date FROM okrs WHERE status = 'in_progress' LIMIT 100;
+Q: "顯示所有 KPI"
+A: SELECT id, kpi_id, name_zh, name_en, data_steward, update_frequency FROM kpi_registry LIMIT 100;
 
-Q: "哪些 KPI 本月未達標？"
-A: SELECT kr.kpi_code, kr.kpi_name, kv.target_value, kv.actual_value
-   FROM kpi_registry kr
-   JOIN kpi_values kv ON kr.id = kv.kpi_id
-   WHERE kv.period_start >= date_trunc('month', CURRENT_DATE)
-   AND kv.actual_value < kv.target_value
-   LIMIT 100;
+Q: "顯示所有進行中的任務"
+A: SELECT id, title, description, status, priority, due_date FROM tasks WHERE status = 'in_progress' LIMIT 100;
 
-Q: "顯示我的任務"
-A: SELECT id, title, description, status, priority, due_date FROM tasks WHERE assignee_id = $1 LIMIT 100;
+Q: "顯示所有策略專案"
+A: SELECT id, initiative_id, name_zh, initiative_type, status, responsible_unit FROM initiatives LIMIT 100;
+
+Q: "顯示所有 OKR"
+A: SELECT o.id, o.quarter, o.objective, i.name_zh as initiative_name FROM okrs o LEFT JOIN initiatives i ON o.initiative_id = i.id LIMIT 100;
+
+Q: "顯示高優先級的任務"
+A: SELECT id, title, description, status, priority, due_date FROM tasks WHERE priority = 'high' OR priority = 'urgent' LIMIT 100;
 `;
 
 // Generate SQL query from natural language
@@ -90,13 +115,23 @@ async function generateSQLQuery(userMessage: string, userId: string, modelId?: s
     const selectedModel = modelId || DEFAULT_MODEL;
     const model = genAI.getGenerativeModel({ model: selectedModel });
 
-    const prompt = `${DATABASE_SCHEMA}
+    // Get all settings from database
+    const settings = await getAllAISettings();
+
+    // Build structured prompt with fallbacks
+    const dbSchema = settings['database_schema_prompt'] || DEFAULT_DATABASE_SCHEMA;
+    const constraints = settings['ai_constraints_prompt'] || '';
+
+    const prompt = `${dbSchema}
+
+${constraints ? `查詢限制規則：\n${constraints}\n` : ''}
 
 使用者問題：${userMessage}
 使用者 ID：${userId}
 
 請生成對應的 PostgreSQL SQL 查詢語句。只回傳 SQL 語句，不要包含其他說明文字。
-如果問題提到「我的」或「我」，請使用 WHERE 條件過濾 user_id 或相關欄位 = '${userId}'。
+重要：所有 id 欄位（如 user_id, assignee_id 等）都是 UUID 類型，比較時需要使用類型轉換。
+如果問題提到「我的」或「我」，請使用 WHERE 條件過濾，例如：assignee_id = '${userId}'::uuid
 `;
 
     const result = await model.generateContent(prompt);
@@ -127,23 +162,70 @@ async function generateSQLQuery(userMessage: string, userId: string, modelId?: s
   }
 }
 
+// Default prompts (used as fallbacks)
+const DEFAULT_ROLE = `你是慈濟大學全球事務處的 AI 助理，專門協助全球事務長進行策略規劃與執行管理。`;
+
+const DEFAULT_OUTPUT_FORMAT = `回應格式要求：
+1. 使用清晰的標題分段
+2. 重要數據以列點方式呈現
+3. 語氣正式、專業
+4. 提供詳盡的分析說明
+5. 使用數字編號 (1. 2. 3.) 列點
+6. 段落之間以空行分隔
+7. 重要資訊可用【】標註強調`;
+
 // Generate natural language response from query results
-async function generateResponse(userMessage: string, sqlQuery: string, queryResult: any[], modelId?: string): Promise<string> {
+async function generateResponse(
+  userMessage: string,
+  sqlQuery: string,
+  queryResult: any[],
+  modelId?: string,
+  sqlError?: string | null
+): Promise<string> {
   try {
     const selectedModel = modelId || DEFAULT_MODEL;
     const model = genAI.getGenerativeModel({ model: selectedModel });
 
-    const prompt = `使用者問題：${userMessage}
+    // Get all settings from database
+    const settings = await getAllAISettings();
 
-SQL 查詢：${sqlQuery}
+    // Build structured prompt with all components
+    const role = settings['ai_role_prompt'] || DEFAULT_ROLE;
+    const context = settings['ai_context_prompt'] || '';
+    const outputFormat = settings['ai_output_format_prompt'] || DEFAULT_OUTPUT_FORMAT;
+    const examples = settings['ai_examples_prompt'] || '';
 
-查詢結果（前 10 筆）：
-${JSON.stringify(queryResult.slice(0, 10), null, 2)}
+    // Handle SQL error case
+    let querySection: string;
+    if (sqlError) {
+      querySection = `【查詢狀態】
+查詢執行時發生錯誤：${sqlError}
 
-總共 ${queryResult.length} 筆資料。
+請根據使用者的問題，直接提供有幫助的回應。如果無法從資料庫取得資料，請說明可能的原因並提供建議。`;
+    } else {
+      querySection = `【SQL 查詢】
+${sqlQuery}
 
-請用中文總結查詢結果，提供有意義的分析和見解。如果沒有資料，請友善地告知使用者。
-回答要簡潔、專業，並突出重點資訊。`;
+【查詢結果】
+${queryResult.length > 0 ? JSON.stringify(queryResult.slice(0, 20), null, 2) : '無查詢結果'}
+
+總共 ${queryResult.length} 筆資料。`;
+    }
+
+    const prompt = `【角色設定】
+${role}
+
+${context ? `【背景資訊】\n${context}\n` : ''}
+【使用者問題】
+${userMessage}
+
+${querySection}
+
+${examples ? `【回應範例參考】\n${examples}\n` : ''}
+【輸出格式要求】
+${outputFormat}
+
+請根據以上資訊，以專業、詳盡的方式回應使用者的問題。`;
 
     const result = await model.generateContent(prompt);
     const response = await result.response;
@@ -214,14 +296,31 @@ router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
     );
 
     // Generate SQL query from user message
-    const sqlQuery = await generateSQLQuery(message, userId, selectedModel);
+    let sqlQuery: string;
+    let rows: any[] = [];
+    let sqlError: string | null = null;
 
-    // Execute SQL query
-    const queryResult = await client.query(sqlQuery);
-    const rows = queryResult.rows;
+    try {
+      sqlQuery = await generateSQLQuery(message, userId, selectedModel);
 
-    // Generate AI response
-    const aiResponse = await generateResponse(message, sqlQuery, rows, selectedModel);
+      // Execute SQL query
+      const queryResult = await client.query(sqlQuery);
+      rows = queryResult.rows;
+    } catch (sqlErr: any) {
+      console.error('SQL generation or execution error:', sqlErr);
+      sqlQuery = `-- 查詢生成或執行失敗: ${sqlErr.message}`;
+      sqlError = sqlErr.message;
+      rows = [];
+    }
+
+    // Generate AI response (even if SQL failed, let AI explain the situation)
+    const aiResponse = await generateResponse(
+      message,
+      sqlQuery,
+      rows,
+      selectedModel,
+      sqlError
+    );
 
     // Save assistant message with query details
     await client.query(
@@ -244,6 +343,16 @@ router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
   } catch (error: any) {
     await client.query('ROLLBACK');
     console.error('Chat error:', error);
+
+    // Check for quota exceeded error
+    const errorMessage = error.message || '';
+    if (errorMessage.includes('429') || errorMessage.includes('quota') || errorMessage.includes('Too Many Requests')) {
+      return res.status(429).json({
+        error: 'API 配額超限',
+        details: 'Google Gemini API 免費配額已用完（每天 20 次請求限制）。請稍後再試或升級付費方案。'
+      });
+    }
+
     res.status(500).json({
       error: '處理訊息時發生錯誤',
       details: error.message
