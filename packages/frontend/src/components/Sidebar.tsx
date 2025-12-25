@@ -18,6 +18,7 @@ const menuItems: MenuItem[] = [
     children: [
       { title: '數據總覽', href: '/dashboard' },
       { title: 'KPI', href: '/kpi' },
+      { title: '任務統計', href: '/tasks/statistics' },
     ],
   },
   {

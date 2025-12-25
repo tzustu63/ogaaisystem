@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { DragDropContext, Droppable, Draggable, DropResult } from 'react-beautiful-dnd';
 import api from '@/lib/api';
-import { taskApi, initiativeApi, okrApi } from '@/lib/api';
+import { taskApi, initiativeApi, okrApi, systemOptionsApi } from '@/lib/api';
 import TracePath from '@/components/TracePath';
 import Link from 'next/link';
 
@@ -79,9 +79,13 @@ export default function KanbanPage() {
     okr_id: '',
     kr_id: '',
     kr_contribution_value: 0,
+    funding_source: '',
+    amount: '',
   });
   
   const [selectedKR, setSelectedKR] = useState<KeyResult | null>(null);
+  const [fundingSources, setFundingSources] = useState<any[]>([]);
+  const [evidenceItems, setEvidenceItems] = useState<Array<{ description: string; url: string }>>([]);
 
   useEffect(() => {
     fetchTasks();
@@ -90,12 +94,14 @@ export default function KanbanPage() {
 
   const fetchOptions = async () => {
     try {
-      const [usersRes, initiativesRes] = await Promise.all([
+      const [usersRes, initiativesRes, fundingSourcesRes] = await Promise.all([
         api.get('/users'),
         initiativeApi.getAll(),
+        systemOptionsApi.getByCategory('funding_source'),
       ]);
       setUsers(usersRes.data || []);
       setInitiatives(initiativesRes.data || []);
+      setFundingSources(fundingSourcesRes.data || []);
     } catch (error) {
       console.error('Error fetching options:', error);
     }
@@ -273,7 +279,9 @@ export default function KanbanPage() {
         due_date: newTask.due_date || undefined,
         initiative_id: newTask.initiative_id || undefined,
         kr_id: newTask.kr_id || undefined,
-        kr_contribution_value: newTask.kr_id ? (newTask.kr_contribution_value || 0) : undefined,
+        kr_contribution_value: newTask.kr_id ? Number(newTask.kr_contribution_value) || 0 : undefined,
+        funding_source: newTask.funding_source || undefined,
+        amount: newTask.amount && String(newTask.amount).trim() ? parseFloat(String(newTask.amount)) : undefined,
       };
       
       await taskApi.create(taskData);
@@ -289,6 +297,8 @@ export default function KanbanPage() {
         okr_id: '',
         kr_id: '',
         kr_contribution_value: 0,
+        funding_source: '',
+        amount: '',
       });
       setOkrs([]);
       setKeyResults([]);
@@ -307,11 +317,21 @@ export default function KanbanPage() {
       const taskDetail = await taskApi.getById(task.id);
       const taskData = taskDetail.data;
       
+      // 從 kr_id 取得 okr_id（如果任務沒有直接存 okr_id）
+      let okrId = taskData.okr_id;
+      if (!okrId && taskData.kr_id) {
+        // 從 keyResults 中找對應的 okr_id
+        const kr = keyResults.find((k) => k.id === taskData.kr_id);
+        if (kr) {
+          okrId = kr.okr_id;
+        }
+      }
+      
       // 載入相關的 OKR 和 KR（如果有的話）
       if (taskData.initiative_id) {
         await handleInitiativeChange(taskData.initiative_id);
-        if (taskData.okr_id) {
-          await handleOKRChange(taskData.okr_id);
+        if (okrId) {
+          await handleOKRChange(okrId);
           if (taskData.kr_id) {
             const kr = keyResults.find((k) => k.id === taskData.kr_id);
             if (kr) {
@@ -320,6 +340,13 @@ export default function KanbanPage() {
           }
         }
       }
+      
+      // 載入佐證資料
+      const evidenceItemsData = (taskData.attachments || []).map((att: any) => ({
+        description: att.file_name || att.description || '',
+        url: att.file_url || '',
+      }));
+      setEvidenceItems(evidenceItemsData.length > 0 ? evidenceItemsData : [{ description: '', url: '' }]);
       
       setEditingTask(taskData);
       setNewTask({
@@ -330,9 +357,11 @@ export default function KanbanPage() {
         assignee_id: taskData.assignee_id || '',
         due_date: taskData.due_date ? new Date(taskData.due_date).toISOString().split('T')[0] : '',
         initiative_id: taskData.initiative_id || '',
-        okr_id: taskData.okr_id || '',
+        okr_id: okrId || '',
         kr_id: taskData.kr_id || '',
-        kr_contribution_value: taskData.kr_contribution_value || 0,
+        kr_contribution_value: Number(taskData.kr_contribution_value) || 0,
+        funding_source: taskData.funding_source || '',
+        amount: taskData.amount ? String(taskData.amount) : '',
       });
       setShowEditTaskModal(true);
     } catch (error: any) {
@@ -347,6 +376,9 @@ export default function KanbanPage() {
     
     setCreatingTask(true);
     try {
+      // 過濾掉空的佐證資料
+      const validEvidenceItems = evidenceItems.filter(item => item.url.trim() || item.description.trim());
+      
       // 注意：後端 schema 沒有 okr_id 欄位，不要傳送
       await taskApi.update(editingTask.id, {
         title: newTask.title,
@@ -357,10 +389,14 @@ export default function KanbanPage() {
         due_date: newTask.due_date || undefined,
         initiative_id: newTask.initiative_id || undefined,
         kr_id: newTask.kr_id || undefined,
-        kr_contribution_value: newTask.kr_id ? (newTask.kr_contribution_value || 0) : undefined,
+        kr_contribution_value: newTask.kr_id ? Number(newTask.kr_contribution_value) || 0 : undefined,
+        funding_source: newTask.funding_source || undefined,
+        amount: newTask.amount && String(newTask.amount).trim() ? parseFloat(String(newTask.amount)) : undefined,
+        attachments: validEvidenceItems.length > 0 ? validEvidenceItems : undefined,
       });
       setShowEditTaskModal(false);
       setEditingTask(null);
+      setEvidenceItems([{ description: '', url: '' }]);
       setNewTask({
         title: '',
         description: '',
@@ -372,6 +408,8 @@ export default function KanbanPage() {
         okr_id: '',
         kr_id: '',
         kr_contribution_value: 0,
+        funding_source: '',
+        amount: '',
       });
       await fetchTasks();
     } catch (error: any) {
@@ -709,6 +747,40 @@ export default function KanbanPage() {
                   />
                 </div>
 
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      經費來源
+                    </label>
+                    <select
+                      value={newTask.funding_source}
+                      onChange={(e) => setNewTask({ ...newTask, funding_source: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="">請選擇</option>
+                      {fundingSources.map((source) => (
+                        <option key={source.id} value={source.value}>
+                          {source.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      金額
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={newTask.amount}
+                      onChange={(e) => setNewTask({ ...newTask, amount: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder="輸入金額"
+                    />
+                  </div>
+                </div>
+
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     關聯策略專案 <span className="text-gray-500 text-xs">(步驟 1)</span>
@@ -799,12 +871,69 @@ export default function KanbanPage() {
                   </div>
                 )}
 
+                {/* 佐證資料 */}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="block text-sm font-medium text-gray-700">
+                      佐證資料
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setEvidenceItems([...evidenceItems, { description: '', url: '' }])}
+                      className="text-sm text-blue-600 hover:text-blue-800"
+                    >
+                      + 新增佐證
+                    </button>
+                  </div>
+                  <div className="space-y-3">
+                    {evidenceItems.map((item, index) => (
+                      <div key={index} className="flex gap-2 items-start">
+                        <div className="flex-1 space-y-2">
+                          <input
+                            type="text"
+                            placeholder="佐證說明"
+                            value={item.description}
+                            onChange={(e) => {
+                              const newItems = [...evidenceItems];
+                              newItems[index].description = e.target.value;
+                              setEvidenceItems(newItems);
+                            }}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                          />
+                          <input
+                            type="url"
+                            placeholder="Google Drive 網址"
+                            value={item.url}
+                            onChange={(e) => {
+                              const newItems = [...evidenceItems];
+                              newItems[index].url = e.target.value;
+                              setEvidenceItems(newItems);
+                            }}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                          />
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const newItems = evidenceItems.filter((_, i) => i !== index);
+                            setEvidenceItems(newItems.length > 0 ? newItems : [{ description: '', url: '' }]);
+                          }}
+                          className="text-red-600 hover:text-red-800 px-2 py-1 text-sm"
+                        >
+                          刪除
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
                 <div className="flex justify-end space-x-3 pt-4 border-t">
                   <button
                     type="button"
                     onClick={() => {
                       setShowEditTaskModal(false);
                       setEditingTask(null);
+                      setEvidenceItems([{ description: '', url: '' }]);
                       setNewTask({
                         title: '',
                         description: '',
@@ -816,6 +945,8 @@ export default function KanbanPage() {
                         okr_id: '',
                         kr_id: '',
                         kr_contribution_value: 0,
+                        funding_source: '',
+                        amount: '',
                       });
                       setSelectedKR(null);
                     }}
@@ -933,6 +1064,40 @@ export default function KanbanPage() {
                   />
                 </div>
 
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      經費來源
+                    </label>
+                    <select
+                      value={newTask.funding_source}
+                      onChange={(e) => setNewTask({ ...newTask, funding_source: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="">請選擇</option>
+                      {fundingSources.map((source) => (
+                        <option key={source.id} value={source.value}>
+                          {source.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      金額
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={newTask.amount}
+                      onChange={(e) => setNewTask({ ...newTask, amount: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder="輸入金額"
+                    />
+                  </div>
+                </div>
+
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     關聯策略專案 <span className="text-gray-500 text-xs">(步驟 1)</span>
@@ -1045,6 +1210,8 @@ export default function KanbanPage() {
                         okr_id: '',
                         kr_id: '',
                         kr_contribution_value: 0,
+                        funding_source: '',
+                        amount: '',
                       });
                       setOkrs([]);
                       setKeyResults([]);

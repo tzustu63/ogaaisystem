@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { kpiApi } from '@/lib/api';
+import { kpiApi, initiativeApi, systemOptionsApi } from '@/lib/api';
 import api from '@/lib/api';
 import Link from 'next/link';
 import ReactECharts from 'echarts-for-react';
@@ -29,19 +29,29 @@ export default function DashboardPage() {
   const [initiatives, setInitiatives] = useState<Initiative[]>([]);
   const [okrs, setOKRs] = useState<OKR[]>([]);
   const [loading, setLoading] = useState(true);
-  const [viewMode, setViewMode] = useState<'overview' | 'okr' | 'drilldown'>('overview');
+  const [viewMode, setViewMode] = useState<'overview' | 'okr' | 'drilldown' | 'budget'>('overview');
   const [selectedStatus, setSelectedStatus] = useState<string | null>(null);
+  
+  // 預算使用相關狀態
+  const [budgetData, setBudgetData] = useState<any[]>([]);
+  const [budgetGroupBy, setBudgetGroupBy] = useState<'initiative' | 'kpi'>('initiative');
+  const [selectedInitiativeId, setSelectedInitiativeId] = useState<string>('');
+  const [selectedKpiId, setSelectedKpiId] = useState<string>('');
+  const [fundingSources, setFundingSources] = useState<any[]>([]);
+  const [loadingBudget, setLoadingBudget] = useState(false);
 
   useEffect(() => {
     Promise.all([
       kpiApi.getAll(),
       api.get('/initiatives'),
       api.get('/okr'),
+      systemOptionsApi.getByCategory('funding_source'),
     ])
-      .then(([kpisRes, initRes, okrRes]) => {
+      .then(([kpisRes, initRes, okrRes, fundingRes]) => {
         setKpis(kpisRes.data);
         setInitiatives(initRes.data || []);
         setOKRs(okrRes.data || []);
+        setFundingSources(fundingRes.data || []);
         setLoading(false);
       })
       .catch((err) => {
@@ -49,6 +59,34 @@ export default function DashboardPage() {
         setLoading(false);
       });
   }, []);
+
+  useEffect(() => {
+    if (viewMode === 'budget') {
+      fetchBudgetUsage();
+    }
+  }, [viewMode, budgetGroupBy, selectedInitiativeId, selectedKpiId]);
+
+  const fetchBudgetUsage = async () => {
+    setLoadingBudget(true);
+    try {
+      const params: any = {
+        group_by: budgetGroupBy,
+      };
+      if (budgetGroupBy === 'initiative' && selectedInitiativeId) {
+        params.initiative_id = selectedInitiativeId;
+      }
+      if (budgetGroupBy === 'kpi' && selectedKpiId) {
+        params.kpi_id = selectedKpiId;
+      }
+      
+      const res = await initiativeApi.getBudgetUsage(params);
+      setBudgetData(res.data.data || []);
+    } catch (error) {
+      console.error('Error fetching budget usage:', error);
+    } finally {
+      setLoadingBudget(false);
+    }
+  };
 
   // 統計燈號（確保與 KPI 頁面一致）
   const statusCounts = {
@@ -78,6 +116,87 @@ export default function DashboardPage() {
       default:
         return 'bg-gray-300';
     }
+  };
+
+  // 預算使用長條圖
+  const getBudgetBarChartOption = () => {
+    if (budgetData.length === 0) {
+      return { title: { text: '尚無資料' } };
+    }
+
+    // 收集所有出現的預算來源
+    const allSources = new Set<string>();
+    budgetData.forEach((item) => {
+      Object.keys(item.used_by_source || {}).forEach((source) => {
+        allSources.add(source);
+      });
+    });
+
+    const sources = Array.from(allSources);
+    const names = budgetData.map((item) => item.name);
+    
+    // 為每個預算來源分配顏色
+    const colors = [
+      '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6',
+      '#06b6d4', '#ec4899', '#84cc16', '#f97316', '#6366f1',
+    ];
+    const sourceColors: Record<string, string> = {};
+    sources.forEach((source, index) => {
+      sourceColors[source] = colors[index % colors.length];
+    });
+
+    // 構建 series 數據
+    const series = sources.map((source) => {
+      const data = budgetData.map((item) => {
+        return item.used_by_source?.[source] || 0;
+      });
+      return {
+        name: fundingSources.find((s) => s.value === source)?.label || source,
+        type: 'bar',
+        stack: 'budget',
+        data,
+        itemStyle: { color: sourceColors[source] },
+      };
+    });
+
+    return {
+      title: {
+        text: budgetGroupBy === 'initiative' ? '策略專案預算使用' : 'KPI 預算使用',
+        left: 'center',
+      },
+      tooltip: {
+        trigger: 'axis',
+        axisPointer: { type: 'shadow' },
+        formatter: (params: any) => {
+          let result = `${params[0].axisValue}<br/>`;
+          let total = 0;
+          params.forEach((param: any) => {
+            if (param.value > 0) {
+              result += `${param.marker}${param.seriesName}: ${param.value.toLocaleString()}<br/>`;
+              total += param.value;
+            }
+          });
+          result += `<b>總計: ${total.toLocaleString()}</b>`;
+          return result;
+        },
+      },
+      legend: {
+        data: series.map((s) => s.name),
+        top: 30,
+      },
+      xAxis: {
+        type: 'category',
+        data: names,
+        axisLabel: {
+          rotate: 45,
+        },
+      },
+      yAxis: {
+        type: 'value',
+        name: '金額',
+      },
+      series,
+    };
   };
 
   // KPI 達成率橫條圖
@@ -160,6 +279,14 @@ export default function DashboardPage() {
               }`}
             >
               OKR 進度
+            </button>
+            <button
+              onClick={() => setViewMode('budget')}
+              className={`px-4 py-2 rounded ${
+                viewMode === 'budget' ? 'bg-primary-600 text-white' : 'bg-gray-200'
+              }`}
+            >
+              預算使用
             </button>
             {/* 下鑽路徑按鈕已隱藏 */}
             {/* <button
@@ -322,7 +449,160 @@ export default function DashboardPage() {
           </>
         )}
 
-        {/* 視圖2：OKR 進度 */}
+        {/* 視圖2：預算使用 */}
+        {viewMode === 'budget' && (
+          <div className="space-y-6">
+            {/* 篩選器 */}
+            <div className="bg-white rounded-lg shadow p-6">
+              <h2 className="text-xl font-semibold mb-4">預算使用統計</h2>
+              
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    分組方式
+                  </label>
+                  <select
+                    value={budgetGroupBy}
+                    onChange={(e) => {
+                      setBudgetGroupBy(e.target.value as 'initiative' | 'kpi');
+                      setSelectedInitiativeId('');
+                      setSelectedKpiId('');
+                    }}
+                    className="w-full px-4 py-2 border rounded-md focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="initiative">依策略專案</option>
+                    <option value="kpi">依 KPI</option>
+                  </select>
+                </div>
+
+                {budgetGroupBy === 'initiative' && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      選擇策略專案
+                    </label>
+                    <select
+                      value={selectedInitiativeId}
+                      onChange={(e) => setSelectedInitiativeId(e.target.value)}
+                      className="w-full px-4 py-2 border rounded-md focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="">全部專案</option>
+                      {initiatives.map((initiative) => (
+                        <option key={initiative.id} value={initiative.id}>
+                          {(initiative as any).name_zh || initiative.name || '未命名專案'}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                {budgetGroupBy === 'kpi' && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      選擇 KPI
+                    </label>
+                    <select
+                      value={selectedKpiId}
+                      onChange={(e) => setSelectedKpiId(e.target.value)}
+                      className="w-full px-4 py-2 border rounded-md focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="">全部 KPI</option>
+                      {kpis.map((kpi) => (
+                        <option key={kpi.id} value={kpi.id}>
+                          {kpi.name_zh}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* 預算使用圖表 */}
+            <div className="bg-white rounded-lg shadow p-6">
+              {loadingBudget ? (
+                <div className="text-center py-8 text-gray-500">載入中...</div>
+              ) : budgetData.length === 0 ? (
+                <div className="text-center py-8 text-gray-500">尚無預算使用資料</div>
+              ) : (
+                <>
+                  <ReactECharts
+                    option={getBudgetBarChartOption()}
+                    style={{ height: '500px' }}
+                  />
+                  
+                  {/* 詳細表格 */}
+                  <div className="mt-6 overflow-x-auto">
+                    <table className="min-w-full divide-y divide-gray-200">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                            {budgetGroupBy === 'initiative' ? '策略專案' : 'KPI'}
+                          </th>
+                          {fundingSources.map((source) => (
+                            <th key={source.id} className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                              {source.label}
+                            </th>
+                          ))}
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                            總使用金額
+                          </th>
+                          {budgetGroupBy === 'initiative' && (
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                              總預算
+                            </th>
+                          )}
+                          {budgetGroupBy === 'initiative' && (
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                              使用率
+                            </th>
+                          )}
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-gray-200">
+                        {budgetData.map((item) => {
+                          const totalUsed = item.total_used || 0;
+                          const totalBudget = item.total_budget || 0;
+                          const usageRate = totalBudget > 0 ? ((totalUsed / totalBudget) * 100).toFixed(1) : '-';
+                          
+                          return (
+                            <tr key={item.id}>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                                {item.name}
+                              </td>
+                              {fundingSources.map((source) => {
+                                const amount = item.used_by_source?.[source.value] || 0;
+                                return (
+                                  <td key={source.id} className="px-6 py-4 whitespace-nowrap text-sm">
+                                    {amount > 0 ? amount.toLocaleString() : '-'}
+                                  </td>
+                                );
+                              })}
+                              <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold">
+                                {totalUsed.toLocaleString()}
+                              </td>
+                              {budgetGroupBy === 'initiative' && (
+                                <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                  {totalBudget > 0 ? totalBudget.toLocaleString() : '-'}
+                                </td>
+                              )}
+                              {budgetGroupBy === 'initiative' && (
+                                <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                  {usageRate !== '-' ? `${usageRate}%` : '-'}
+                                </td>
+                              )}
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* 視圖3：OKR 進度 */}
         {viewMode === 'okr' && (
           <div className="space-y-6">
             {/* OKR 統計 */}

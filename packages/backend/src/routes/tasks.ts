@@ -75,6 +75,8 @@ const createTaskSchema = z.object({
   kpi_id: z.string().uuid().optional(),
   risk_markers: z.array(z.string()).optional(),
   kr_contribution_value: z.number().optional(),
+  funding_source: z.string().optional(),
+  amount: z.number().optional(),
 });
 
 // 取得所有任務
@@ -121,6 +123,96 @@ router.get('/', authenticate, async (req: AuthRequest, res) => {
   }
 });
 
+// 任務完成統計
+router.get('/statistics', authenticate, async (req: AuthRequest, res) => {
+  try {
+    const { assignee_ids, start_date, end_date } = req.query;
+    
+    // 日期範圍（如果沒有提供，使用最近30天）
+    const endDate = end_date ? new Date(end_date as string) : new Date();
+    const startDate = start_date ? new Date(start_date as string) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    
+    let query = `
+      SELECT 
+        u.id as user_id,
+        u.full_name as user_name,
+        u.username,
+        COUNT(t.id) FILTER (WHERE t.status = 'done') as completed_count,
+        COUNT(t.id) FILTER (WHERE t.status != 'done') as pending_count,
+        COUNT(t.id) as total_count,
+        COUNT(t.id) FILTER (WHERE t.status = 'done' AND t.updated_at::date >= $1::date AND t.updated_at::date <= $2::date) as completed_in_range
+      FROM users u
+      LEFT JOIN tasks t ON t.assignee_id = u.id
+      WHERE 1=1
+    `;
+    
+    const params: any[] = [];
+    let paramIndex = 3;
+    
+    params.push(startDate.toISOString().split('T')[0]);
+    params.push(endDate.toISOString().split('T')[0]);
+    
+    // 用戶篩選
+    if (assignee_ids) {
+      const userIds = Array.isArray(assignee_ids) ? assignee_ids : [assignee_ids];
+      if (userIds.length > 0) {
+        query += ` AND u.id = ANY($${paramIndex})`;
+        params.push(userIds);
+        paramIndex++;
+      }
+    }
+    
+    query += `
+      GROUP BY u.id, u.full_name, u.username
+      HAVING COUNT(t.id) > 0
+      ORDER BY completed_count DESC, u.full_name
+    `;
+    
+    const result = await pool.query(query, params);
+    
+    // 按日期統計（每日完成數量）
+    let dailyQuery = `
+      SELECT 
+        DATE(t.updated_at) as date,
+        COUNT(*) as count,
+        u.id as user_id,
+        u.full_name as user_name
+      FROM tasks t
+      JOIN users u ON t.assignee_id = u.id
+      WHERE t.status = 'done'
+        AND t.updated_at::date >= $1::date
+        AND t.updated_at::date <= $2::date
+    `;
+    
+    const dailyParams: any[] = [startDate.toISOString().split('T')[0], endDate.toISOString().split('T')[0]];
+    let dailyParamIndex = 3;
+    
+    if (assignee_ids) {
+      const userIds = Array.isArray(assignee_ids) ? assignee_ids : [assignee_ids];
+      if (userIds.length > 0) {
+        dailyQuery += ` AND u.id = ANY($${dailyParamIndex})`;
+        dailyParams.push(userIds);
+        dailyParamIndex++;
+      }
+    }
+    
+    dailyQuery += `
+      GROUP BY DATE(t.updated_at), u.id, u.full_name
+      ORDER BY date ASC, u.full_name
+    `;
+    
+    const dailyResult = await pool.query(dailyQuery, dailyParams);
+    
+    res.json({
+      summary: result.rows,
+      daily: dailyResult.rows,
+    });
+  } catch (error) {
+    console.error('Error fetching task statistics:', error);
+    res.status(500).json({ error: '取得任務統計失敗' });
+  }
+});
+
 // 取得單一任務
 router.get('/:id', authenticate, async (req: AuthRequest, res) => {
   try {
@@ -130,7 +222,8 @@ router.get('/:id', authenticate, async (req: AuthRequest, res) => {
       `SELECT t.*, 
               u.full_name as assignee_name,
               i.name_zh as initiative_name,
-              kr.description as kr_description
+              kr.description as kr_description,
+              kr.okr_id
        FROM tasks t
        LEFT JOIN users u ON t.assignee_id = u.id
        LEFT JOIN initiatives i ON t.initiative_id = i.id
@@ -186,8 +279,9 @@ router.post('/', authenticate, async (req: AuthRequest, res) => {
     const result = await pool.query(
       `INSERT INTO tasks (
         title, description, task_type, priority, status, assignee_id,
-        due_date, initiative_id, kr_id, kpi_id, risk_markers, kr_contribution_value, created_by
-      ) VALUES ($1, $2, $3, $4, 'todo', $5, $6, $7, $8, $9, $10, $11, $12)
+        due_date, initiative_id, kr_id, kpi_id, risk_markers, kr_contribution_value, 
+        funding_source, amount, created_by
+      ) VALUES ($1, $2, $3, $4, 'todo', $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
       RETURNING *`,
       [
         validated.title,
@@ -201,6 +295,8 @@ router.post('/', authenticate, async (req: AuthRequest, res) => {
         validated.kpi_id || null,
         validated.risk_markers || [],
         validated.kr_contribution_value || 0,
+        validated.funding_source || null,
+        validated.amount || null,
         req.user?.id,
       ]
     );
@@ -279,7 +375,11 @@ const updateTaskSchema = createTaskSchema.partial();
 router.put('/:id', authenticate, async (req: AuthRequest, res) => {
   try {
     const { id } = req.params;
-    const validated = updateTaskSchema.parse(req.body);
+    
+    // 分離 attachments（不在 schema 中）
+    const { attachments, ...taskData } = req.body;
+    
+    const validated = updateTaskSchema.parse(taskData);
 
     // 取得舊任務資訊
     const oldTaskResult = await pool.query('SELECT kr_id FROM tasks WHERE id = $1', [id]);
@@ -348,6 +448,16 @@ router.put('/:id', authenticate, async (req: AuthRequest, res) => {
       updateValues.push(validated.kr_contribution_value || 0);
       paramIndex++;
     }
+    if (validated.funding_source !== undefined) {
+      updateFields.push(`funding_source = $${paramIndex}`);
+      updateValues.push(validated.funding_source || null);
+      paramIndex++;
+    }
+    if (validated.amount !== undefined) {
+      updateFields.push(`amount = $${paramIndex}`);
+      updateValues.push(validated.amount || null);
+      paramIndex++;
+    }
 
     if (updateFields.length === 0) {
       return res.status(400).json({ error: '沒有要更新的欄位' });
@@ -360,6 +470,30 @@ router.put('/:id', authenticate, async (req: AuthRequest, res) => {
       `UPDATE tasks SET ${updateFields.join(', ')} WHERE id = $${paramIndex}`,
       updateValues
     );
+
+    // 處理佐證資料（attachments）
+    if (attachments !== undefined) {
+      // 先刪除現有的附件
+      await pool.query('DELETE FROM task_attachments WHERE task_id = $1', [id]);
+      
+      // 插入新的附件
+      if (Array.isArray(attachments) && attachments.length > 0) {
+        for (const attachment of attachments) {
+          if (attachment.url && attachment.url.trim()) {
+            await pool.query(
+              `INSERT INTO task_attachments (task_id, file_url, file_name, uploaded_by)
+               VALUES ($1, $2, $3, $4)`,
+              [
+                id,
+                attachment.url.trim(),
+                attachment.description || '佐證資料',
+                req.user?.id,
+              ]
+            );
+          }
+        }
+      }
+    }
 
     // 取得新任務資訊
     const newTaskResult = await pool.query('SELECT kr_id FROM tasks WHERE id = $1', [id]);
@@ -377,6 +511,7 @@ router.put('/:id', authenticate, async (req: AuthRequest, res) => {
     res.json(result.rows[0]);
   } catch (error) {
     if (error instanceof z.ZodError) {
+      console.error('Validation error:', JSON.stringify(error.errors, null, 2));
       return res.status(400).json({ error: '驗證失敗', details: error.errors });
     }
     console.error('Error updating task:', error);

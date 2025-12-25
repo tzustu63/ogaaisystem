@@ -58,6 +58,7 @@ export const initiativeApi = {
   delete: (id: string) => api.delete(`/initiatives/${id}`),
   getProgramReport: (id: string) => api.get(`/initiatives/${id}/program-report`),
   getEvidenceSummary: (id: string) => api.get(`/initiatives/${id}/evidence-summary`),
+  getBudgetUsage: (params?: any) => api.get('/initiatives/budget/usage', { params }),
 };
 
 // OKR API
@@ -76,6 +77,7 @@ export const taskApi = {
   update: (id: string, data: any) => api.put(`/tasks/${id}`, data),
   updateStatus: (id: string, status: string) => api.patch(`/tasks/${id}/status`, { status }),
   delete: (id: string) => api.delete(`/tasks/${id}`),
+  getStatistics: (params?: any) => api.get('/tasks/statistics', { params }),
   getKanbanBoard: (params?: any) => api.get('/tasks/kanban/board', { params }),
   getFormDefinitions: (params?: any) => api.get('/tasks/forms/definitions', { params }),
   getTaskForms: (taskId: string) => api.get(`/tasks/${taskId}/forms`),
@@ -162,6 +164,12 @@ export const userApi = {
 export const settingsApi = {
   getNotificationSettings: () => api.get('/settings/notifications'),
   updateNotificationSettings: (data: any) => api.put('/settings/notifications', data),
+};
+
+// System Options API
+export const systemOptionsApi = {
+  getAll: () => api.get('/system-options'),
+  getByCategory: (category: string) => api.get(`/system-options/category/${category}`),
 };
 
 // Audit API

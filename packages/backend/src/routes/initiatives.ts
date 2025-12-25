@@ -500,5 +500,163 @@ router.get('/:id/evidence-summary', authenticate, async (req: AuthRequest, res) 
   }
 });
 
+// 預算使用統計
+router.get('/budget/usage', authenticate, async (req: AuthRequest, res) => {
+  try {
+    const { group_by, initiative_id, kpi_id } = req.query;
+    
+    if (group_by === 'initiative') {
+      // 按策略專案分組
+      let query = `
+        SELECT 
+          i.id,
+          i.name_zh as initiative_name,
+          i.budget as total_budget,
+          COALESCE(SUM(t.amount), 0) as used_amount,
+          t.funding_source,
+          COUNT(t.id) as task_count
+        FROM initiatives i
+        LEFT JOIN tasks t ON t.initiative_id = i.id AND t.amount IS NOT NULL AND t.amount > 0
+        WHERE 1=1
+      `;
+      
+      const params: any[] = [];
+      let paramIndex = 1;
+      
+      if (initiative_id) {
+        query += ` AND i.id = $${paramIndex}`;
+        params.push(initiative_id);
+        paramIndex++;
+      }
+      
+      query += `
+        GROUP BY i.id, i.name_zh, i.budget, t.funding_source
+        ORDER BY i.name_zh, t.funding_source
+      `;
+      
+      const result = await pool.query(query, params);
+      
+      // 先取得所有策略專案（即使沒有預算或任務）
+      const allInitiativesQuery = initiative_id 
+        ? await pool.query('SELECT id, name_zh, budget FROM initiatives WHERE id = $1', [initiative_id])
+        : await pool.query('SELECT id, name_zh, budget FROM initiatives ORDER BY name_zh', []);
+      
+      // 按策略專案分組，並按預算來源分類
+      const grouped: Record<string, any> = {};
+      
+      // 先初始化所有策略專案
+      allInitiativesQuery.rows.forEach((row) => {
+        grouped[row.id] = {
+          id: row.id,
+          name: row.name_zh,
+          total_budget: parseFloat(row.budget) || 0,
+          used_by_source: {},
+          total_used: 0,
+        };
+      });
+      
+      // 再填入預算使用資料
+      result.rows.forEach((row) => {
+        const key = row.id;
+        if (!grouped[key]) {
+          grouped[key] = {
+            id: row.id,
+            name: row.initiative_name,
+            total_budget: parseFloat(row.total_budget) || 0,
+            used_by_source: {},
+            total_used: 0,
+          };
+        }
+        
+        if (row.funding_source) {
+          if (!grouped[key].used_by_source[row.funding_source]) {
+            grouped[key].used_by_source[row.funding_source] = 0;
+          }
+          grouped[key].used_by_source[row.funding_source] += parseFloat(row.used_amount) || 0;
+        }
+        grouped[key].total_used += parseFloat(row.used_amount) || 0;
+      });
+      
+      res.json({ data: Object.values(grouped), type: 'initiative' });
+      
+    } else if (group_by === 'kpi') {
+      // 按 KPI 分組
+      let query = `
+        SELECT 
+          k.id,
+          k.name_zh as kpi_name,
+          COALESCE(SUM(t.amount), 0) as used_amount,
+          t.funding_source,
+          COUNT(t.id) as task_count
+        FROM kpi_registry k
+        LEFT JOIN tasks t ON t.kpi_id = k.id AND t.amount IS NOT NULL AND t.amount > 0
+        WHERE 1=1
+      `;
+      
+      const params: any[] = [];
+      let paramIndex = 1;
+      
+      if (kpi_id) {
+        query += ` AND k.id = $${paramIndex}`;
+        params.push(kpi_id);
+        paramIndex++;
+      }
+      
+      query += `
+        GROUP BY k.id, k.name_zh, t.funding_source
+        ORDER BY k.name_zh, t.funding_source
+      `;
+      
+      const result = await pool.query(query, params);
+      
+      // 先取得所有 KPI（即使沒有預算或任務）
+      const allKPIsQuery = kpi_id 
+        ? await pool.query('SELECT id, name_zh FROM kpi_registry WHERE id = $1', [kpi_id])
+        : await pool.query('SELECT id, name_zh FROM kpi_registry ORDER BY name_zh', []);
+      
+      // 按 KPI 分組，並按預算來源分類
+      const grouped: Record<string, any> = {};
+      
+      // 先初始化所有 KPI
+      allKPIsQuery.rows.forEach((row) => {
+        grouped[row.id] = {
+          id: row.id,
+          name: row.name_zh,
+          used_by_source: {},
+          total_used: 0,
+        };
+      });
+      
+      // 再填入預算使用資料
+      result.rows.forEach((row) => {
+        const key = row.id;
+        if (!grouped[key]) {
+          grouped[key] = {
+            id: row.id,
+            name: row.kpi_name,
+            used_by_source: {},
+            total_used: 0,
+          };
+        }
+        
+        if (row.funding_source) {
+          if (!grouped[key].used_by_source[row.funding_source]) {
+            grouped[key].used_by_source[row.funding_source] = 0;
+          }
+          grouped[key].used_by_source[row.funding_source] += parseFloat(row.used_amount) || 0;
+        }
+        grouped[key].total_used += parseFloat(row.used_amount) || 0;
+      });
+      
+      res.json({ data: Object.values(grouped), type: 'kpi' });
+    } else {
+      res.status(400).json({ error: 'group_by 必須是 "initiative" 或 "kpi"' });
+    }
+  } catch (error) {
+    console.error('Error fetching budget usage:', error);
+    res.status(500).json({ error: '取得預算使用統計失敗' });
+  }
+});
+
 export default router;
 
