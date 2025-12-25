@@ -131,15 +131,16 @@ router.post('/', authenticate, async (req: AuthRequest, res) => {
 
     const result = await pool.query(
       `INSERT INTO kpi_registry (
-        kpi_id, name_zh, name_en, definition, formula,
+        kpi_id, name_zh, name_en, bsc_perspective, definition, formula,
         data_source, data_steward, update_frequency, target_value, thresholds,
         evidence_requirements, applicable_programs, created_by
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
       RETURNING *`,
       [
         validated.kpi_id,
         validated.name_zh,
         validated.name_en || null,
+        validated.bsc_perspective || null,
         validated.definition,
         validated.formula,
         validated.data_source,

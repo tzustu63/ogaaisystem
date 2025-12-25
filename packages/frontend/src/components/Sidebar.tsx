@@ -48,6 +48,10 @@ const menuItems: MenuItem[] = [
     ],
   },
   {
+    title: '🤖 AI 小幫手',
+    href: '/chat',
+  },
+  {
     title: '👥 系統設定',
     href: '/settings',
     children: [

@@ -4,6 +4,13 @@
 
 ## 📚 功能文檔列表
 
+### AI 小幫手
+- **[AI_CHAT_HELPER.md](AI_CHAT_HELPER.md)** - AI 智能對話功能 🆕
+  - 自然語言查詢資料庫
+  - Google Gemini AI 整合
+  - 對話歷史記錄
+  - SQL 查詢透明化
+
 ### OKR-KPI 整合
 - **[OKR_KPI_INTEGRATION.md](OKR_KPI_INTEGRATION.md)** - OKR 與 KPI 整合機制
   - KR 如何貢獻 KPI
@@ -56,6 +63,12 @@
 - 可執行工作流
 - SLA 檢查
 - 稽核軌跡
+
+### 8. AI 小幫手 🆕
+- 自然語言資料查詢
+- Google Gemini AI 驅動
+- 智能 SQL 生成
+- 對話歷史管理
 
 ## 📖 詳細文檔
 

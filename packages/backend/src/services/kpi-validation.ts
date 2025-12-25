@@ -8,8 +8,8 @@ export interface KPIValidationResult {
 
 // 驗證 KPI ID 格式
 export const validateKPIId = (kpiId: string): boolean => {
-  // KPI ID 應符合格式：BSC-F-001, BSC-C-002 等
-  const pattern = /^BSC-[FCIL]-\d{3}$/;
+  // KPI ID 應符合格式：KPI-001, KPI-002 等
+  const pattern = /^KPI-\d{3}$/;
   return pattern.test(kpiId);
 };
 
@@ -104,7 +104,7 @@ export const validateKPIDefinition = (kpi: any): KPIValidationResult => {
 
   // 驗證 KPI ID 格式
   if (kpi.kpi_id && !validateKPIId(kpi.kpi_id)) {
-    errors.push('KPI ID 格式不正確，應為 BSC-[F/C/I/L]-###');
+    errors.push('KPI ID 格式不正確，應為 KPI-###');
   }
 
   // 驗證公式

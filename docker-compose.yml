@@ -86,6 +86,7 @@ services:
       MINIO_BUCKET: oga-ai-system
       JWT_SECRET: ${JWT_SECRET:-your-secret-key-change-in-production}
       JWT_EXPIRES_IN: 7d
+      GOOGLE_AI_API_KEY: AIzaSyD6ldujQmbPgkXZmdxmC3Uk4QIyGSBVbxQ
     ports:
       - "13001:3001"
     volumes:
@@ -109,6 +110,14 @@ services:
         cd /app/packages/backend &&
         npm run migrate 001_initial_schema.sql 2>&1 || echo '遷移 001 可能已執行' &&
         npm run migrate 002_add_missing_features.sql 2>&1 || echo '遷移 002 可能已執行' &&
+        npm run migrate 003_create_default_admin.sql 2>&1 || echo '遷移 003 可能已執行' &&
+        npm run migrate 004_integrate_kr_kpi.sql 2>&1 || echo '遷移 004 可能已執行' &&
+        npm run migrate 005_system_settings.sql 2>&1 || echo '遷移 005 可能已執行' &&
+        npm run migrate 008_remove_raci_workflows.sql 2>&1 || echo '遷移 008 可能已執行' &&
+        npm run migrate 009_add_task_kr_contribution.sql 2>&1 || echo '遷移 009 可能已執行' &&
+        npm run migrate 010_add_pdca_execution_check_point.sql 2>&1 || echo '遷移 010 可能已執行' &&
+        npm run migrate 011_add_task_funding_fields.sql 2>&1 || echo '遷移 011 可能已執行' &&
+        npm run migrate 012_create_chat_tables.sql 2>&1 || echo '遷移 012 可能已執行' &&
         echo '啟動後端服務...' &&
         npm start
       "
@@ -118,10 +127,11 @@ services:
     build:
       context: .
       dockerfile: packages/frontend/Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:13001/api
     container_name: oga-frontend
     environment:
       NODE_ENV: production
-      NEXT_PUBLIC_API_URL: http://localhost:13001/api
     ports:
       - "13000:3000"
     depends_on:

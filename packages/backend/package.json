@@ -13,6 +13,7 @@
     "wait-for-db": "node -e \"const {pool} = require('./dist/config/database'); pool.query('SELECT 1').then(() => { console.log('Database ready'); process.exit(0); }).catch((e) => { console.log('Waiting for database...'); setTimeout(() => process.exit(1), 2000); });\""
   },
   "dependencies": {
+    "@google/generative-ai": "^0.24.1",
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",

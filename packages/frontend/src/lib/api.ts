@@ -180,9 +180,19 @@ export const auditApi = {
 
 // Auth API
 export const authApi = {
-  login: (username: string, password: string) => 
+  login: (username: string, password: string) =>
     api.post('/auth/login', { username, password }),
   getMe: () => api.get('/auth/me'),
+};
+
+// Chat API
+export const chatApi = {
+  sendMessage: (data: { message: string; conversationId?: string | null; model?: string }) =>
+    api.post('/chat', data),
+  getConversations: () => api.get('/chat/conversations'),
+  getConversation: (id: string) => api.get(`/chat/conversations/${id}`),
+  deleteConversation: (id: string) => api.delete(`/chat/conversations/${id}`),
+  getModels: () => api.get('/chat/models'),
 };
 
 export default api;

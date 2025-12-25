@@ -22,10 +22,20 @@ interface NewUserForm {
   password: string;
 }
 
+interface EditUserForm {
+  id: string;
+  username: string;
+  email: string;
+  full_name: string;
+  department: string;
+  roles: string[];
+}
+
 export default function UsersPage() {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
   const [saving, setSaving] = useState(false);
   const [formData, setFormData] = useState<NewUserForm>({
     username: '',
@@ -34,6 +44,7 @@ export default function UsersPage() {
     department: '',
     password: '',
   });
+  const [editFormData, setEditFormData] = useState<EditUserForm | null>(null);
 
   useEffect(() => {
     fetchUsers();
@@ -81,6 +92,63 @@ export default function UsersPage() {
       ...prev,
       [name]: value,
     }));
+  };
+
+  const handleEditUser = (user: User) => {
+    setEditFormData({
+      id: user.id,
+      username: user.username,
+      email: user.email,
+      full_name: user.full_name,
+      department: user.department || '',
+      roles: user.roles || [],
+    });
+    setShowEditModal(true);
+  };
+
+  const handleUpdateUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editFormData) return;
+
+    setSaving(true);
+    try {
+      await userApi.updateUser(editFormData.id, {
+        email: editFormData.email,
+        full_name: editFormData.full_name,
+        department: editFormData.department,
+      });
+      setShowEditModal(false);
+      setEditFormData(null);
+      await fetchUsers();
+      alert('用戶更新成功');
+    } catch (error: any) {
+      console.error('Error updating user:', error);
+      alert(error.response?.data?.error || '更新用戶失敗');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDeleteUser = async (userId: string, username: string) => {
+    if (!confirm(`確定要刪除用戶「${username}」嗎？此操作無法撤銷。`)) {
+      return;
+    }
+
+    try {
+      // TODO: 需要在 backend 實作刪除用戶的 API
+      alert('刪除用戶功能尚未實作');
+    } catch (error: any) {
+      console.error('Error deleting user:', error);
+      alert(error.response?.data?.error || '刪除用戶失敗');
+    }
+  };
+
+  const handleEditInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = e.target;
+    setEditFormData((prev) => prev ? ({
+      ...prev,
+      [name]: value,
+    }) : null);
   };
 
   if (loading) {
@@ -153,8 +221,18 @@ export default function UsersPage() {
                     {new Date(user.created_at).toLocaleDateString('zh-TW')}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm">
-                    <button className="text-blue-600 hover:text-blue-900 mr-3">編輯</button>
-                    <button className="text-red-600 hover:text-red-900">刪除</button>
+                    <button
+                      onClick={() => handleEditUser(user)}
+                      className="text-blue-600 hover:text-blue-900 mr-3"
+                    >
+                      編輯
+                    </button>
+                    <button
+                      onClick={() => handleDeleteUser(user.id, user.username)}
+                      className="text-red-600 hover:text-red-900"
+                    >
+                      刪除
+                    </button>
                   </td>
                 </tr>
               ))}
@@ -162,7 +240,7 @@ export default function UsersPage() {
           </table>
         </div>
 
-        {/* 新增用戶模態框 */}
+        {/* 新增用戶 Modal */}
         {showModal && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
             <div className="bg-white rounded-lg p-6 w-full max-w-md">
@@ -255,6 +333,92 @@ export default function UsersPage() {
                     className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {saving ? '創建中...' : '創建'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* 編輯用戶 Modal */}
+        {showEditModal && editFormData && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-lg p-6 w-full max-w-md">
+              <h2 className="text-xl font-bold mb-4">編輯使用者</h2>
+
+              <form onSubmit={handleUpdateUser}>
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    使用者名稱
+                  </label>
+                  <input
+                    type="text"
+                    value={editFormData.username}
+                    disabled
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-100 cursor-not-allowed"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">使用者名稱無法修改</p>
+                </div>
+
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Email <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="email"
+                    name="email"
+                    value={editFormData.email}
+                    onChange={handleEditInputChange}
+                    required
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    全名 <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    name="full_name"
+                    value={editFormData.full_name}
+                    onChange={handleEditInputChange}
+                    required
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+
+                <div className="mb-6">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    部門
+                  </label>
+                  <input
+                    type="text"
+                    name="department"
+                    value={editFormData.department}
+                    onChange={handleEditInputChange}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+
+                <div className="flex justify-end space-x-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowEditModal(false);
+                      setEditFormData(null);
+                    }}
+                    className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+                    disabled={saving}
+                  >
+                    取消
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={saving}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {saving ? '更新中...' : '更新'}
                   </button>
                 </div>
               </form>

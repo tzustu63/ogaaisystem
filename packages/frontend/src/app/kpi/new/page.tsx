@@ -2,14 +2,13 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { kpiApi } from '@/lib/api';
+import { kpiApi, systemOptionsApi } from '@/lib/api';
 import Link from 'next/link';
 
 interface KPIFormData {
   kpi_id: string;
   name_zh: string;
   name_en: string;
-  bsc_perspective: string;
   definition: string;
   formula: string;
   data_source: string;
@@ -30,26 +29,17 @@ interface KPIFormData {
 
 interface ExistingKPI {
   kpi_id: string;
-  bsc_perspective: string;
 }
-
-// BSC 構面對應的代碼
-const perspectiveCodeMap: Record<string, string> = {
-  financial: 'F',
-  customer: 'C',
-  internal_process: 'I',
-  learning_growth: 'L',
-};
 
 export default function NewKPIPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [existingKPIs, setExistingKPIs] = useState<ExistingKPI[]>([]);
+  const [personnelList, setPersonnelList] = useState<string[]>([]);
   const [formData, setFormData] = useState<KPIFormData>({
     kpi_id: '',
     name_zh: '',
     name_en: '',
-    bsc_perspective: 'financial',
     definition: '',
     formula: '',
     data_source: '',
@@ -68,60 +58,58 @@ export default function NewKPIPage() {
     applicable_programs: [],
   });
 
-  // 根據構面生成下一個可用的 KPI ID
-  const generateNextKpiId = useCallback((perspective: string, kpis: ExistingKPI[]): string => {
-    const code = perspectiveCodeMap[perspective] || 'F';
-    const prefix = `BSC-${code}-`;
-    
-    // 找出該構面所有現有的編號
+  // 生成下一個可用的 KPI ID
+  const generateNextKpiId = useCallback((kpis: ExistingKPI[]): string => {
+    const prefix = 'KPI-';
+
+    // 找出所有現有的編號
     const existingNumbers = kpis
       .filter(kpi => kpi.kpi_id && kpi.kpi_id.startsWith(prefix))
       .map(kpi => {
-        const match = kpi.kpi_id.match(/BSC-[FCIL]-(\d{3})$/);
+        const match = kpi.kpi_id.match(/KPI-(\d{3})$/);
         return match ? parseInt(match[1], 10) : 0;
       })
       .filter(n => !isNaN(n));
-    
+
     // 找出最大編號並 +1
     const maxNumber = existingNumbers.length > 0 ? Math.max(...existingNumbers) : 0;
     const nextNumber = maxNumber + 1;
-    
+
     // 格式化為三位數
     return `${prefix}${String(nextNumber).padStart(3, '0')}`;
   }, []);
 
-  // 載入現有 KPI 列表
+  // 載入現有 KPI 列表和人員名單
   useEffect(() => {
-    const fetchExistingKPIs = async () => {
+    const fetchData = async () => {
       try {
-        const response = await kpiApi.getAll();
-        const kpis = response.data || [];
+        // 載入 KPI 列表
+        const kpiResponse = await kpiApi.getAll();
+        const kpis = kpiResponse.data || [];
         setExistingKPIs(kpis);
-        
+
         // 生成初始 KPI ID
-        const initialId = generateNextKpiId('financial', kpis);
+        const initialId = generateNextKpiId(kpis);
         setFormData(prev => ({ ...prev, kpi_id: initialId }));
+
+        // 載入人員名單
+        const personnelResponse = await systemOptionsApi.getByCategory('person');
+        if (personnelResponse.data && personnelResponse.data.length > 0) {
+          // 只載入啟用的人員，並使用顯示名稱（label）
+          const names = personnelResponse.data
+            .filter((p: any) => p.is_active)
+            .map((p: any) => p.label);
+          setPersonnelList(names);
+        }
       } catch (error) {
-        console.error('Error fetching existing KPIs:', error);
+        console.error('Error fetching data:', error);
         // 即使獲取失敗，也設定一個預設值
-        setFormData(prev => ({ ...prev, kpi_id: 'BSC-F-001' }));
+        setFormData(prev => ({ ...prev, kpi_id: 'KPI-001' }));
       }
     };
-    
-    fetchExistingKPIs();
-  }, [generateNextKpiId]);
 
-  // 當 BSC 構面改變時，重新生成 KPI ID
-  const handlePerspectiveChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const newPerspective = e.target.value;
-    const newKpiId = generateNextKpiId(newPerspective, existingKPIs);
-    
-    setFormData(prev => ({
-      ...prev,
-      bsc_perspective: newPerspective,
-      kpi_id: newKpiId,
-    }));
-  };
+    fetchData();
+  }, [generateNextKpiId]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -185,7 +173,7 @@ export default function NewKPIPage() {
                 className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-100 text-gray-700 cursor-not-allowed"
               />
               <p className="mt-1 text-xs text-gray-500">
-                系統自動生成（F=財務, C=客戶, I=內部流程, L=學習成長）
+                系統自動生成（KPI-001, KPI-002...）
               </p>
             </div>
 
@@ -218,41 +206,21 @@ export default function NewKPIPage() {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  BSC 構面 <span className="text-red-500">*</span>
-                </label>
-                <select
-                  name="bsc_perspective"
-                  value={formData.bsc_perspective}
-                  onChange={handlePerspectiveChange}
-                  required
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="financial">財務構面</option>
-                  <option value="customer">客戶構面</option>
-                  <option value="internal_process">內部流程構面</option>
-                  <option value="learning_growth">學習成長構面</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  更新頻率 <span className="text-red-500">*</span>
-                </label>
-                <select
-                  name="update_frequency"
-                  value={formData.update_frequency}
-                  onChange={handleInputChange}
-                  required
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="monthly">每月</option>
-                  <option value="quarterly">每季</option>
-                  <option value="ad_hoc">不定期</option>
-                </select>
-              </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                更新頻率 <span className="text-red-500">*</span>
+              </label>
+              <select
+                name="update_frequency"
+                value={formData.update_frequency}
+                onChange={handleInputChange}
+                required
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="monthly">每月</option>
+                <option value="quarterly">每季</option>
+                <option value="ad_hoc">不定期</option>
+              </select>
             </div>
           </div>
 
@@ -313,14 +281,20 @@ export default function NewKPIPage() {
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   資料負責人 <span className="text-red-500">*</span>
                 </label>
-                <input
-                  type="text"
+                <select
                   name="data_steward"
                   value={formData.data_steward}
                   onChange={handleInputChange}
                   required
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
+                >
+                  <option value="">請選擇負責人</option>
+                  {personnelList.map((person) => (
+                    <option key={person} value={person}>
+                      {person}
+                    </option>
+                  ))}
+                </select>
               </div>
             </div>
           </div>
