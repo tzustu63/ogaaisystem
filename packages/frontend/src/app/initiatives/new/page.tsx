@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { initiativeApi, kpiApi } from '@/lib/api';
+import { initiativeApi, kpiApi, userApi } from '@/lib/api';
 import api from '@/lib/api';
 import Link from 'next/link';
 
@@ -17,8 +17,8 @@ interface InitiativeFormData {
   end_date: string;
   budget: number;
   responsible_unit: string;
-  primary_owner: string;
-  co_owners: string[];
+  primary_owner_id: string;
+  co_owner_ids: string[];
   funding_sources: string[];
   related_indicators: string[];
   kpi_ids: string[];
@@ -39,20 +39,27 @@ interface SystemOption {
   label: string;
 }
 
+interface User {
+  id: string;
+  username: string;
+  full_name: string;
+  department?: string;
+}
+
 
 export default function NewInitiativePage() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [kpis, setKpis] = useState<KPI[]>([]);
   const [loadingOptions, setLoadingOptions] = useState(true);
-  
+
   // 系統選項
   const [initiativeTypes, setInitiativeTypes] = useState<SystemOption[]>([]);
   const [departments, setDepartments] = useState<SystemOption[]>([]);
-  const [persons, setPersons] = useState<SystemOption[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
   const [fundingSources, setFundingSources] = useState<SystemOption[]>([]);
   const [indicators, setIndicators] = useState<SystemOption[]>([]);
-  
+
   const [formData, setFormData] = useState<InitiativeFormData>({
     initiative_id: '',
     name_zh: '',
@@ -64,8 +71,8 @@ export default function NewInitiativePage() {
     end_date: '',
     budget: 0,
     responsible_unit: '',
-    primary_owner: '',
-    co_owners: [],
+    primary_owner_id: '',
+    co_owner_ids: [],
     funding_sources: [],
     related_indicators: [],
     kpi_ids: [],
@@ -88,7 +95,7 @@ export default function NewInitiativePage() {
       kpiApi.getAll().then((res) => setKpis(res.data)),
       api.get('/system-options/category/initiative_type').then((res) => setInitiativeTypes(res.data)),
       api.get('/system-options/category/department').then((res) => setDepartments(res.data)),
-      api.get('/system-options/category/person').then((res) => setPersons(res.data)),
+      userApi.getActiveUsers().then((res) => setUsers(res.data)),
       api.get('/system-options/category/funding_source').then((res) => setFundingSources(res.data)),
       api.get('/system-options/category/indicator').then((res) => setIndicators(res.data)),
       fetchNextInitiativeId(),
@@ -113,12 +120,13 @@ export default function NewInitiativePage() {
         end_date: formData.end_date || undefined,
         name_en: formData.name_en || undefined,
         kpi_ids: formData.kpi_ids.length > 0 ? formData.kpi_ids : undefined,
-        co_owners: formData.co_owners.length > 0 ? formData.co_owners : undefined,
+        primary_owner_id: formData.primary_owner_id || undefined,
+        co_owner_ids: formData.co_owner_ids.length > 0 ? formData.co_owner_ids : undefined,
         funding_sources: formData.funding_sources.length > 0 ? formData.funding_sources : undefined,
         related_indicators: formData.related_indicators.length > 0 ? formData.related_indicators : undefined,
         notes: formData.notes || undefined,
       };
-      
+
       const response = await initiativeApi.create(submitData);
       router.push(`/initiatives/${response.data.id}`);
     } catch (error: any) {
@@ -140,7 +148,7 @@ export default function NewInitiativePage() {
   };
 
   const handleMultiSelectChange = (
-    field: 'co_owners' | 'funding_sources' | 'related_indicators' | 'kpi_ids',
+    field: 'co_owner_ids' | 'funding_sources' | 'related_indicators' | 'kpi_ids',
     value: string,
     checked: boolean
   ) => {
@@ -371,22 +379,26 @@ export default function NewInitiativePage() {
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  主要負責人 <span className="text-red-500">*</span>
+                  主要負責人
                 </label>
                 <select
-                  name="primary_owner"
-                  value={formData.primary_owner}
+                  name="primary_owner_id"
+                  value={formData.primary_owner_id}
                   onChange={handleInputChange}
-                  required
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
                   <option value="">請選擇</option>
-                  {persons.map((person) => (
-                    <option key={person.id} value={person.value}>
-                      {person.label}
+                  {users.map((user) => (
+                    <option key={user.id} value={user.id}>
+                      {user.full_name} {user.department ? `(${user.department})` : ''}
                     </option>
                   ))}
                 </select>
+                <p className="text-xs text-gray-500 mt-1">
+                  <Link href="/settings/users" className="text-blue-600 hover:underline">
+                    管理人員
+                  </Link>
+                </p>
               </div>
             </div>
 
@@ -395,17 +407,17 @@ export default function NewInitiativePage() {
                 共同負責人（可多選）
               </label>
               <div className="max-h-40 overflow-y-auto border border-gray-200 rounded p-3 grid grid-cols-3 gap-2">
-                {persons.map((person) => (
-                  <label key={person.id} className="flex items-center space-x-2 cursor-pointer">
+                {users.map((user) => (
+                  <label key={user.id} className="flex items-center space-x-2 cursor-pointer">
                     <input
                       type="checkbox"
-                      checked={formData.co_owners.includes(person.value)}
+                      checked={formData.co_owner_ids.includes(user.id)}
                       onChange={(e) =>
-                        handleMultiSelectChange('co_owners', person.value, e.target.checked)
+                        handleMultiSelectChange('co_owner_ids', user.id, e.target.checked)
                       }
                       className="rounded"
                     />
-                    <span className="text-sm">{person.label}</span>
+                    <span className="text-sm">{user.full_name}</span>
                   </label>
                 ))}
               </div>

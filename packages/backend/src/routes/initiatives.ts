@@ -16,8 +16,10 @@ const createInitiativeSchema = z.object({
   end_date: z.string().optional(),
   budget: z.number().optional(),
   responsible_unit: z.string().min(1),
-  primary_owner: z.string().optional(),
-  co_owners: z.array(z.string()).optional(),
+  primary_owner: z.string().optional(),       // 保留向後相容
+  primary_owner_id: z.string().uuid().optional(), // 新欄位：關聯 users 表
+  co_owners: z.array(z.string()).optional(),  // 保留向後相容
+  co_owner_ids: z.array(z.string().uuid()).optional(), // 新欄位：關聯 users 表
   funding_sources: z.array(z.string()).optional(),
   related_indicators: z.array(z.string()).optional(),
   kpi_ids: z.array(z.string().uuid()).optional(),
@@ -28,10 +30,12 @@ const createInitiativeSchema = z.object({
 router.get('/', authenticate, async (req: AuthRequest, res) => {
   try {
     const result = await pool.query(
-      `SELECT i.*, 
+      `SELECT i.*,
+              u.full_name as primary_owner_name,
               (SELECT COUNT(*) FROM okrs o WHERE o.initiative_id = i.id) as okr_count,
               (SELECT COUNT(*) FROM tasks t WHERE t.initiative_id = i.id) as task_count
        FROM initiatives i
+       LEFT JOIN users u ON i.primary_owner_id = u.id
        ORDER BY i.created_at DESC`
     );
     res.json(result.rows);
@@ -45,9 +49,12 @@ router.get('/', authenticate, async (req: AuthRequest, res) => {
 router.get('/:id', authenticate, async (req: AuthRequest, res) => {
   try {
     const { id } = req.params;
-    
+
     const initiativeResult = await pool.query(
-      'SELECT * FROM initiatives WHERE id = $1',
+      `SELECT i.*, u.full_name as primary_owner_name
+       FROM initiatives i
+       LEFT JOIN users u ON i.primary_owner_id = u.id
+       WHERE i.id = $1`,
       [id]
     );
 
@@ -55,7 +62,9 @@ router.get('/:id', authenticate, async (req: AuthRequest, res) => {
       return res.status(404).json({ error: 'Initiative 不存在' });
     }
 
-    const [kpis, programs, okrs] = await Promise.all([
+    const initiative = initiativeResult.rows[0];
+
+    const [kpis, programs, okrs, coOwners] = await Promise.all([
       pool.query(
         `SELECT k.*, ik.expected_impact, ik.actual_impact_description
          FROM kpi_registry k
@@ -71,13 +80,21 @@ router.get('/:id', authenticate, async (req: AuthRequest, res) => {
         'SELECT * FROM okrs WHERE initiative_id = $1 ORDER BY quarter DESC',
         [id]
       ),
+      // 查詢共同負責人姓名
+      initiative.co_owner_ids && initiative.co_owner_ids.length > 0
+        ? pool.query(
+            'SELECT id, full_name FROM users WHERE id = ANY($1)',
+            [initiative.co_owner_ids]
+          )
+        : Promise.resolve({ rows: [] }),
     ]);
 
     res.json({
-      ...initiativeResult.rows[0],
+      ...initiative,
       kpis: kpis.rows,
       programs: programs.rows.map((r) => r.program),
       okrs: okrs.rows,
+      co_owner_names: coOwners.rows.map((r) => r.full_name),
     });
   } catch (error) {
     console.error('Error fetching initiative:', error);
@@ -106,9 +123,9 @@ router.post('/', authenticate, async (req: AuthRequest, res) => {
     const result = await client.query(
       `INSERT INTO initiatives (
         initiative_id, name_zh, name_en, initiative_type, status, risk_level,
-        start_date, end_date, budget, responsible_unit, primary_owner, co_owners,
-        funding_sources, related_indicators, notes, created_by
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+        start_date, end_date, budget, responsible_unit, primary_owner, primary_owner_id,
+        co_owners, co_owner_ids, funding_sources, related_indicators, notes, created_by
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
       RETURNING *`,
       [
         validated.initiative_id,
@@ -122,7 +139,9 @@ router.post('/', authenticate, async (req: AuthRequest, res) => {
         validated.budget || null,
         validated.responsible_unit,
         validated.primary_owner || null,
+        validated.primary_owner_id || null,
         validated.co_owners || null,
+        validated.co_owner_ids || null,
         validated.funding_sources || null,
         validated.related_indicators || null,
         validated.notes || null,
@@ -251,9 +270,19 @@ router.put('/:id', authenticate, async (req: AuthRequest, res) => {
       updateValues.push(validated.primary_owner || null);
       paramIndex++;
     }
+    if (validated.primary_owner_id !== undefined) {
+      updateFields.push(`primary_owner_id = $${paramIndex}`);
+      updateValues.push(validated.primary_owner_id || null);
+      paramIndex++;
+    }
     if (validated.co_owners !== undefined) {
       updateFields.push(`co_owners = $${paramIndex}`);
       updateValues.push(validated.co_owners || null);
+      paramIndex++;
+    }
+    if (validated.co_owner_ids !== undefined) {
+      updateFields.push(`co_owner_ids = $${paramIndex}`);
+      updateValues.push(validated.co_owner_ids || null);
       paramIndex++;
     }
     if (validated.funding_sources !== undefined) {

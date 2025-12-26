@@ -16,7 +16,8 @@ const createKPISchema = z.object({
   definition: z.string().min(1),
   formula: z.string().min(1),
   data_source: z.string().min(1),
-  data_steward: z.string().min(1),
+  data_steward: z.string().optional(),           // 保留向後相容
+  data_steward_id: z.string().uuid().optional(), // 新欄位：關聯 users 表
   update_frequency: z.enum(['monthly', 'quarterly', 'ad_hoc']),
   target_value: z.record(z.any()),
   thresholds: z.object({
@@ -33,24 +34,26 @@ const createKPISchema = z.object({
 router.get('/', authenticate, async (req: AuthRequest, res) => {
   try {
     const result = await pool.query(
-      `SELECT k.*, 
+      `SELECT k.*,
+              u.full_name as data_steward_name,
               (SELECT COUNT(*) FROM kpi_versions kv WHERE kv.kpi_id = k.id) as version_count,
-              (SELECT kv.status 
-               FROM kpi_values kv 
-               WHERE kv.kpi_id = k.id 
-               ORDER BY kv.period DESC 
+              (SELECT kv.status
+               FROM kpi_values kv
+               WHERE kv.kpi_id = k.id
+               ORDER BY kv.period DESC
                LIMIT 1) as status,
-              (SELECT kv.value 
-               FROM kpi_values kv 
-               WHERE kv.kpi_id = k.id 
-               ORDER BY kv.period DESC 
+              (SELECT kv.value
+               FROM kpi_values kv
+               WHERE kv.kpi_id = k.id
+               ORDER BY kv.period DESC
                LIMIT 1) as latest_value,
-              (SELECT kv.target_value 
-               FROM kpi_values kv 
-               WHERE kv.kpi_id = k.id 
-               ORDER BY kv.period DESC 
+              (SELECT kv.target_value
+               FROM kpi_values kv
+               WHERE kv.kpi_id = k.id
+               ORDER BY kv.period DESC
                LIMIT 1) as latest_target_value
        FROM kpi_registry k
+       LEFT JOIN users u ON k.data_steward_id = u.id
        ORDER BY k.created_at DESC`
     );
     res.json(result.rows);
@@ -65,7 +68,10 @@ router.get('/:id', authenticate, async (req: AuthRequest, res) => {
   try {
     const { id } = req.params;
     const kpiResult = await pool.query(
-      'SELECT * FROM kpi_registry WHERE id = $1',
+      `SELECT k.*, u.full_name as data_steward_name
+       FROM kpi_registry k
+       LEFT JOIN users u ON k.data_steward_id = u.id
+       WHERE k.id = $1`,
       [id]
     );
 
@@ -132,9 +138,9 @@ router.post('/', authenticate, async (req: AuthRequest, res) => {
     const result = await pool.query(
       `INSERT INTO kpi_registry (
         kpi_id, name_zh, name_en, bsc_perspective, definition, formula,
-        data_source, data_steward, update_frequency, target_value, thresholds,
+        data_source, data_steward, data_steward_id, update_frequency, target_value, thresholds,
         evidence_requirements, applicable_programs, created_by
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
       RETURNING *`,
       [
         validated.kpi_id,
@@ -144,7 +150,8 @@ router.post('/', authenticate, async (req: AuthRequest, res) => {
         validated.definition,
         validated.formula,
         validated.data_source,
-        validated.data_steward,
+        validated.data_steward || null,
+        validated.data_steward_id || null,
         validated.update_frequency,
         JSON.stringify(validated.target_value),
         JSON.stringify(validated.thresholds),
@@ -375,22 +382,35 @@ router.post('/:id/values', authenticate, async (req: AuthRequest, res) => {
 
     if (existingValue.rows.length > 0 && existingValue.rows[0].status !== status) {
       // 燈號變更，發送通知
-      const kpiInfo = await pool.query('SELECT name_zh, data_steward FROM kpi_registry WHERE id = $1', [id]);
+      const kpiInfo = await pool.query(
+        `SELECT k.name_zh, k.data_steward, k.data_steward_id, u.email, u.full_name
+         FROM kpi_registry k
+         LEFT JOIN users u ON k.data_steward_id = u.id
+         WHERE k.id = $1`,
+        [id]
+      );
       if (kpiInfo.rows.length > 0) {
-        // 查詢資料負責人的 email
-        const stewardResult = await pool.query(
-          `SELECT u.email, u.full_name 
-           FROM users u 
-           WHERE u.full_name LIKE $1 OR u.username = $2`,
-          [`%${kpiInfo.rows[0].data_steward}%`, kpiInfo.rows[0].data_steward]
-        );
-        
-        if (stewardResult.rows.length > 0) {
+        let stewardEmail = kpiInfo.rows[0].email;
+
+        // 如果沒有 data_steward_id，嘗試用 data_steward 文字查詢
+        if (!stewardEmail && kpiInfo.rows[0].data_steward) {
+          const stewardResult = await pool.query(
+            `SELECT u.email, u.full_name
+             FROM users u
+             WHERE u.full_name LIKE $1 OR u.username = $2`,
+            [`%${kpiInfo.rows[0].data_steward}%`, kpiInfo.rows[0].data_steward]
+          );
+          if (stewardResult.rows.length > 0) {
+            stewardEmail = stewardResult.rows[0].email;
+          }
+        }
+
+        if (stewardEmail) {
           await notifyKPIStatusChange(
             kpiInfo.rows[0].name_zh,
             existingValue.rows[0].status,
             status,
-            stewardResult.rows[0].email
+            stewardEmail
           );
         }
       }

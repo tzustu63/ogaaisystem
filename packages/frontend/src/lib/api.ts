@@ -156,8 +156,14 @@ export const dataQualityApi = {
 // User API
 export const userApi = {
   getUsers: (params?: any) => api.get('/users', { params }),
+  getActiveUsers: () => api.get('/users/active'),
+  getUser: (id: string) => api.get(`/users/${id}`),
   createUser: (data: any) => api.post('/users', data),
   updateUser: (id: string, data: any) => api.put(`/users/${id}`, data),
+  toggleActive: (id: string) => api.put(`/users/${id}/toggle-active`),
+  resetPassword: (id: string, password: string) =>
+    api.put(`/users/${id}/reset-password`, { password }),
+  deleteUser: (id: string) => api.delete(`/users/${id}`),
 };
 
 // Settings API

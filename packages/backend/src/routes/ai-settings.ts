@@ -124,7 +124,7 @@ const DEFAULT_AI_SETTINGS: Record<string, { value: string; description: string }
     value: `回應格式要求：
 
 1. 結構化呈現
-   - 使用清晰的標題分段
+   - 使用清晰的標題分段（如「一、」「二、」或「1.」「2.」）
    - 重要數據以列點方式呈現
    - 數據比較使用表格形式
 
@@ -142,10 +142,17 @@ const DEFAULT_AI_SETTINGS: Record<string, { value: string; description: string }
    - 當數據適合以圖表呈現時，說明建議的圖表類型
    - 例如：趨勢用折線圖、比較用長條圖、佔比用圓餅圖
 
-5. 格式規範
-   - 使用數字編號 (1. 2. 3.) 列點
+5. 格式規範（重要）
+   - 使用數字編號 (1. 2. 3.) 或中文數字（一、二、三）列點
    - 段落之間以空行分隔
-   - 重要資訊可用【】標註強調`,
+   - 重要資訊可用【】標註強調
+
+6. 禁止使用的格式（重要）
+   - 禁止使用 * 星號作為列點符號
+   - 禁止使用 ** 雙星號作為粗體標記
+   - 禁止使用 # 井號作為標題標記
+   - 禁止使用 Markdown 語法（如 *斜體*、**粗體**、# 標題）
+   - 使用純文字格式，確保版面清晰易讀`,
     description: 'AI 回應的輸出格式與風格設定',
   },
   ai_examples_prompt: {
@@ -223,40 +230,213 @@ const DEFAULT_AI_SETTINGS: Record<string, { value: string; description: string }
     description: 'AI 查詢與回應的限制條件',
   },
   database_schema_prompt: {
-    value: `資料庫架構說明：
+    value: `資料庫架構說明（PostgreSQL）：
+
+【重要】所有 id 欄位都是 UUID 類型，日期欄位是 timestamp 或 date 類型。
+
+===========================================
+【核心概念：資料階層關係】
+===========================================
+
+本系統採用階層式架構來管理策略執行：
+
+  KPI (績效指標)
+    ↓ initiative_kpis 關聯
+  Initiative (策略專案)
+    ↓ okrs.initiative_id
+  OKR (目標)
+    ↓ key_results.okr_id
+  Key Results (關鍵結果)
+    ↓ tasks.kr_id
+  Tasks (任務)
+
+【查詢策略】當使用者詢問某個主題（如「招募外籍生」）時：
+1. 先在 kpi_registry.name_zh 或 initiatives.name_zh 中搜尋關鍵字
+2. 找到相關的 KPI 或 Initiative 後，透過關聯表查詢下層資料
+3. 使用 JOIN 串聯各層級，呈現完整的執行架構
+
+===========================================
+【資料表結構】
+===========================================
 
 1. 使用者管理
-   - users: 使用者資料 (id, username, email, full_name, department, is_active, created_at)
+   - users: 使用者資料
+     欄位: id(UUID), username, email, full_name, department, position, created_at
+     注意: 不可查詢 password_hash 欄位
 
 2. KPI 管理
-   - kpi_registry: KPI 註冊表 (id, kpi_id, name_zh, name_en, definition, formula, data_source, data_steward, update_frequency, target_value, thresholds, created_at)
-   - kpi_values: KPI 數據記錄 (id, kpi_id, period, value, target_value, status, notes, created_at)
-   - kpi_versions: KPI 版本歷史 (id, kpi_id, version_number, changes, created_at)
+   - kpi_registry: KPI 註冊表（定義 KPI 的基本資訊）
+     欄位: id(UUID), kpi_id(如 KPI-001), name_zh(中文名稱), name_en, definition(定義), formula(計算公式), data_source(資料來源), data_steward(資料負責人), update_frequency(更新頻率: daily/weekly/monthly/quarterly/yearly), target_value(JSONB, 如 {"annual": 170}), thresholds(JSONB, 紅黃綠燈門檻), weight(權重), created_at
+
+   - kpi_values: KPI 實際數據記錄
+     欄位: id(UUID), kpi_id(UUID, 關聯 kpi_registry.id), period(VARCHAR, 格式如 "2025-01" 表示年月), value(實際值), target_value(目標值), status(達成狀態: on_track/at_risk/behind), created_at
+     關聯: kpi_id -> kpi_registry.id
+     【重要】period 是字串類型，格式為 YYYY-MM，例如 "2025-12"
+     查詢本月: period = TO_CHAR(CURRENT_DATE, 'YYYY-MM')
+     查詢本年: period LIKE TO_CHAR(CURRENT_DATE, 'YYYY') || '%'
 
 3. 策略專案 (Initiatives)
-   - initiatives: 策略專案 (id, initiative_id, name_zh, name_en, initiative_type, status, risk_level, start_date, end_date, budget, responsible_unit, created_at)
-   - initiative_kpis: 專案與 KPI 關聯表 (initiative_id, kpi_id, created_at)
+   - initiatives: 策略專案
+     欄位: id(UUID), initiative_id(如 INI-001), name_zh, name_en, initiative_type(類型), status(狀態: planning/in_progress/completed/on_hold/cancelled), risk_level(風險等級: low/medium/high), start_date(DATE), end_date(DATE), budget, responsible_unit(負責單位), primary_owner, notes, created_at
+
+   - initiative_kpis: 專案與 KPI 關聯表（多對多關係）
+     欄位: initiative_id(UUID), kpi_id(UUID)
+     用途: 一個 KPI 可以有多個 Initiative，一個 Initiative 可以關聯多個 KPI
 
 4. OKR 管理
-   - okrs: 目標與關鍵結果 (id, initiative_id, quarter, objective, created_at)
-   - key_results: 關鍵結果明細 (id, okr_id, kr_number, description, target_value, current_value, unit, status, progress, kpi_id, created_at)
+   - okrs: 目標 (Objectives)
+     欄位: id(UUID), initiative_id(UUID, 關聯 initiatives.id), quarter(季度如 2025-Q1), objective(目標描述), created_at
+     關聯: 每個 OKR 屬於一個 Initiative
+
+   - key_results: 關鍵結果 (Key Results)
+     欄位: id(UUID), okr_id(UUID, 關聯 okrs.id), description(描述), target_value(目標值), current_value(目前值), unit(單位), progress_percentage(進度百分比 0-100), status(狀態: not_started/in_progress/at_risk/completed), kpi_id(可關聯 KPI), created_at
+     關聯: 每個 KR 屬於一個 OKR
 
 5. 任務管理
-   - tasks: 任務 (id, title, description, status, priority, due_date, assignee_id, kr_id, initiative_id, kpi_id, created_at)
-   - status 值：todo, in_progress, review, done
-   - priority 值：low, medium, high, urgent
+   - tasks: 任務
+     欄位: id(UUID), title(標題), description, task_type(類型), priority(優先級: low/medium/high/urgent), status(狀態: todo/in_progress/review/done), assignee_id(UUID, 負責人關聯 users.id), due_date(DATE, 截止日期), initiative_id(UUID), kr_id(UUID, 關聯 key_results.id), kpi_id(UUID), kr_contribution_value(對 KR 的貢獻值), funding_source(經費來源), amount(金額), created_at, updated_at
+     關聯: 任務可以關聯到 Initiative, KR, 或 KPI
+
+   - task_attachments: 任務附件
+     欄位: id, task_id, file_name, file_url, uploaded_by, created_at
+
+   - task_collaborators: 任務協作者
+     欄位: task_id, user_id
 
 6. PDCA 循環
-   - pdca_cycles: PDCA 循環記錄 (id, name, initiative_id, okr_id, status, plan_content, do_content, check_content, act_content, created_at)
+   - pdca_cycles: PDCA 循環主表
+     欄位: id(UUID), initiative_id(UUID), okr_id(UUID), cycle_name(名稱), check_frequency(檢查頻率: daily/weekly/monthly), responsible_user_id(UUID, 負責人), data_source, created_at
+
+   - pdca_plans: 計畫 (Plan)
+     欄位: id, pdca_cycle_id, plan_description, target_value, check_points(JSONB)
+
+   - pdca_executions: 執行記錄 (Do)
+     欄位: id, pdca_cycle_id, task_id, execution_date(DATE), actual_value, evidence_urls, executed_by, check_point
+
+   - pdca_checks: 檢核記錄 (Check)
+     欄位: id, pdca_cycle_id, check_date(DATE), completeness_status, timeliness_status, consistency_status, variance_analysis(差異分析), checked_by
+
+   - pdca_actions: 改善行動 (Act)
+     欄位: id, pdca_cycle_id, action_description, responsible_user_id, deadline, status
 
 7. 緊急事件
-   - incidents: 緊急事件 (id, title, description, severity, status, created_at)
+   - incidents: 緊急事件
+     欄位: id(UUID), incident_number(如 INC-001), incident_type(類型), severity(嚴重程度: low/medium/high/critical), occurred_at(發生時間), location, student_name, student_id, description(描述), accountable_user_id(負責人), status(狀態: open/in_progress/resolved/closed), resolution_report(處理報告), prevention_measures(預防措施), closed_at, created_at
 
-常用查詢範例：
-- 所有 KPI：SELECT * FROM kpi_registry LIMIT 100
-- 進行中任務：SELECT * FROM tasks WHERE status = 'in_progress' LIMIT 100
-- 策略專案清單：SELECT * FROM initiatives LIMIT 100
-- OKR 與專案關聯：SELECT o.*, i.name_zh FROM okrs o LEFT JOIN initiatives i ON o.initiative_id = i.id LIMIT 100`,
+===========================================
+【日期時間處理】
+===========================================
+- 使用 CURRENT_DATE 取得今天日期
+- 使用 DATE_TRUNC('month', CURRENT_DATE) 取得本月開始（用於 timestamp/date 欄位）
+- 使用 DATE_TRUNC('year', CURRENT_DATE) 取得今年開始（用於 timestamp/date 欄位）
+- 日期比較用: created_at >= DATE_TRUNC('month', CURRENT_DATE)
+- 【特別注意】kpi_values.period 是字串 YYYY-MM 格式：
+  - 查詢本月: period = TO_CHAR(CURRENT_DATE, 'YYYY-MM')
+  - 查詢特定月: period = '2025-12'
+
+===========================================
+【階層查詢範例】（重要！）
+===========================================
+
+★ 範例1：查詢某主題（如「招募外籍生」）的完整執行架構
+-- 步驟1：先找到相關的 KPI
+SELECT id, kpi_id, name_zh, definition FROM kpi_registry
+WHERE name_zh ILIKE '%外籍生%' OR name_zh ILIKE '%招募%' LIMIT 10;
+
+-- 步驟2：透過 KPI 找到相關的 Initiative
+SELECT i.initiative_id, i.name_zh, i.status, i.responsible_unit
+FROM initiatives i
+JOIN initiative_kpis ik ON i.id = ik.initiative_id
+JOIN kpi_registry k ON ik.kpi_id = k.id
+WHERE k.name_zh ILIKE '%外籍生%' LIMIT 20;
+
+-- 步驟3：透過 Initiative 找到 OKR 和 Key Results
+SELECT i.name_zh as initiative_name, o.objective, kr.description as key_result,
+       kr.current_value, kr.target_value, kr.progress_percentage
+FROM initiatives i
+JOIN initiative_kpis ik ON i.id = ik.initiative_id
+JOIN kpi_registry k ON ik.kpi_id = k.id
+JOIN okrs o ON o.initiative_id = i.id
+JOIN key_results kr ON kr.okr_id = o.id
+WHERE k.name_zh ILIKE '%外籍生%' LIMIT 50;
+
+-- 步驟4：透過 KR 找到具體任務
+SELECT k.name_zh as kpi_name, i.name_zh as initiative_name,
+       kr.description as key_result, t.title as task_title,
+       t.status, t.priority, u.full_name as assignee
+FROM kpi_registry k
+JOIN initiative_kpis ik ON k.id = ik.kpi_id
+JOIN initiatives i ON ik.initiative_id = i.id
+JOIN okrs o ON o.initiative_id = i.id
+JOIN key_results kr ON kr.okr_id = o.id
+LEFT JOIN tasks t ON t.kr_id = kr.id
+LEFT JOIN users u ON t.assignee_id = u.id
+WHERE k.name_zh ILIKE '%外籍生%' LIMIT 100;
+
+★ 範例2：完整的階層查詢（從 KPI 到 Task 一次查詢）
+SELECT
+    k.kpi_id, k.name_zh as kpi_name,
+    i.initiative_id, i.name_zh as initiative_name, i.status as initiative_status,
+    o.quarter, o.objective,
+    kr.description as key_result, kr.progress_percentage,
+    t.title as task_title, t.status as task_status, t.priority,
+    u.full_name as assignee
+FROM kpi_registry k
+LEFT JOIN initiative_kpis ik ON k.id = ik.kpi_id
+LEFT JOIN initiatives i ON ik.initiative_id = i.id
+LEFT JOIN okrs o ON o.initiative_id = i.id
+LEFT JOIN key_results kr ON kr.okr_id = o.id
+LEFT JOIN tasks t ON t.kr_id = kr.id
+LEFT JOIN users u ON t.assignee_id = u.id
+WHERE k.name_zh ILIKE '%搜尋關鍵字%'
+ORDER BY k.kpi_id, i.initiative_id, o.quarter, kr.id
+LIMIT 100;
+
+===========================================
+【一般查詢範例】
+===========================================
+
+1. 所有 KPI 清單：
+   SELECT id, kpi_id, name_zh, data_steward, update_frequency FROM kpi_registry ORDER BY kpi_id LIMIT 100;
+
+2. 進行中的任務：
+   SELECT t.id, t.title, t.status, t.priority, t.due_date, u.full_name as assignee
+   FROM tasks t LEFT JOIN users u ON t.assignee_id = u.id
+   WHERE t.status = 'in_progress' LIMIT 100;
+
+3. 待辦任務（未完成）：
+   SELECT t.id, t.title, t.status, t.priority, t.due_date, u.full_name as assignee
+   FROM tasks t LEFT JOIN users u ON t.assignee_id = u.id
+   WHERE t.status != 'done' ORDER BY t.due_date LIMIT 100;
+
+4. 本月建立的任務：
+   SELECT * FROM tasks WHERE created_at >= DATE_TRUNC('month', CURRENT_DATE) LIMIT 100;
+
+5. 策略專案與負責單位：
+   SELECT initiative_id, name_zh, status, risk_level, responsible_unit, start_date, end_date
+   FROM initiatives ORDER BY created_at DESC LIMIT 100;
+
+6. OKR 與進度：
+   SELECT o.quarter, o.objective, kr.description, kr.current_value, kr.target_value, kr.progress_percentage, kr.status
+   FROM okrs o JOIN key_results kr ON kr.okr_id = o.id
+   ORDER BY o.quarter DESC LIMIT 100;
+
+7. 高優先級未完成任務：
+   SELECT t.title, t.priority, t.due_date, u.full_name as assignee
+   FROM tasks t LEFT JOIN users u ON t.assignee_id = u.id
+   WHERE t.priority IN ('high', 'urgent') AND t.status != 'done'
+   ORDER BY t.due_date LIMIT 100;
+
+8. 本月 KPI 達成狀況（使用字串比對）：
+   SELECT kr.kpi_id, kr.name_zh, kv.period, kv.value, kv.target_value, kv.status
+   FROM kpi_registry kr LEFT JOIN kpi_values kv ON kv.kpi_id = kr.id
+   WHERE kv.period = TO_CHAR(CURRENT_DATE, 'YYYY-MM')
+   ORDER BY kr.kpi_id LIMIT 100;
+
+9. 未結案的緊急事件：
+   SELECT incident_number, incident_type, severity, occurred_at, description, status
+   FROM incidents WHERE status NOT IN ('resolved', 'closed')
+   ORDER BY severity DESC, occurred_at DESC LIMIT 100;`,
     description: '資料庫結構說明，供 AI 生成正確的 SQL 查詢',
   },
 };

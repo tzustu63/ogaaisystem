@@ -86,7 +86,7 @@ services:
       MINIO_BUCKET: oga-ai-system
       JWT_SECRET: ${JWT_SECRET:-your-secret-key-change-in-production}
       JWT_EXPIRES_IN: 7d
-      GOOGLE_AI_API_KEY: AIzaSyD6ldujQmbPgkXZmdxmC3Uk4QIyGSBVbxQ
+      GOOGLE_AI_API_KEY: AIzaSyA_LbyTykc7yWvwQL7WIAqabmMFakS42NI
     ports:
       - "13001:3001"
     volumes:

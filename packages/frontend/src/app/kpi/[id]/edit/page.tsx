@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
-import { kpiApi, initiativeApi } from '@/lib/api';
+import { kpiApi, initiativeApi, userApi } from '@/lib/api';
 import api from '@/lib/api';
 import Link from 'next/link';
 
@@ -13,7 +13,7 @@ interface KPIFormData {
   definition: string;
   formula: string;
   data_source: string;
-  data_steward: string;
+  data_steward_id: string;
   update_frequency: string;
   target_value: {
     annual?: number;
@@ -24,6 +24,13 @@ interface KPIFormData {
     yellow?: any;
     red?: any;
   };
+}
+
+interface User {
+  id: string;
+  username: string;
+  full_name: string;
+  department?: string;
 }
 
 interface Initiative {
@@ -58,6 +65,7 @@ export default function EditKPIPage() {
   const [showNewInitiativeModal, setShowNewInitiativeModal] = useState(false);
   const [creatingInitiative, setCreatingInitiative] = useState(false);
   const [systemOptions, setSystemOptions] = useState<Record<string, SystemOption[]>>({});
+  const [users, setUsers] = useState<User[]>([]);
 
   const [newInitiative, setNewInitiative] = useState<NewInitiativeForm>({
     initiative_id: '',
@@ -74,7 +82,7 @@ export default function EditKPIPage() {
     definition: '',
     formula: '',
     data_source: '',
-    data_steward: '',
+    data_steward_id: '',
     update_frequency: 'monthly',
     target_value: {
       annual: 0,
@@ -90,10 +98,11 @@ export default function EditKPIPage() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [kpiRes, initiativesRes, optionsRes] = await Promise.all([
+        const [kpiRes, initiativesRes, optionsRes, usersRes] = await Promise.all([
           kpiApi.getById(params.id as string),
           initiativeApi.getAll(),
           api.get('/system-options'),
+          userApi.getActiveUsers(),
         ]);
 
         const kpi = kpiRes.data;
@@ -104,7 +113,7 @@ export default function EditKPIPage() {
           definition: kpi.definition || '',
           formula: kpi.formula || '',
           data_source: kpi.data_source || '',
-          data_steward: kpi.data_steward || '',
+          data_steward_id: kpi.data_steward_id || '',
           update_frequency: kpi.update_frequency || 'monthly',
           target_value: kpi.target_value || { annual: 0 },
           thresholds: kpi.thresholds || {
@@ -114,6 +123,9 @@ export default function EditKPIPage() {
             red: { min: 0, max: 59 },
           },
         });
+
+        // 載入用戶列表
+        setUsers(usersRes.data || []);
 
         // 已關聯的策略專案
         if (kpi.initiatives && Array.isArray(kpi.initiatives)) {
@@ -395,22 +407,26 @@ export default function EditKPIPage() {
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  資料負責人 <span className="text-red-500">*</span>
+                  資料負責人
                 </label>
                 <select
-                  name="data_steward"
-                  value={formData.data_steward}
+                  name="data_steward_id"
+                  value={formData.data_steward_id}
                   onChange={handleInputChange}
-                  required
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
                   <option value="">請選擇負責人</option>
-                  {(systemOptions['person'] || []).map((person) => (
-                    <option key={person.id} value={person.label}>
-                      {person.label}
+                  {users.map((user) => (
+                    <option key={user.id} value={user.id}>
+                      {user.full_name} {user.department ? `(${user.department})` : ''}
                     </option>
                   ))}
                 </select>
+                <p className="text-xs text-gray-500 mt-1">
+                  <Link href="/settings/users" className="text-blue-600 hover:underline">
+                    管理人員
+                  </Link>
+                </p>
               </div>
             </div>
           </div>

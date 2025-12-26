@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter, useParams } from 'next/navigation';
-import { initiativeApi, kpiApi } from '@/lib/api';
+import { initiativeApi, kpiApi, userApi } from '@/lib/api';
 import api from '@/lib/api';
 import Link from 'next/link';
 
@@ -17,8 +17,8 @@ interface InitiativeFormData {
   end_date: string;
   budget: number;
   responsible_unit: string;
-  primary_owner: string;
-  co_owners: string[];
+  primary_owner_id: string;
+  co_owner_ids: string[];
   funding_sources: string[];
   related_indicators: string[];
   kpi_ids: string[];
@@ -38,6 +38,13 @@ interface SystemOption {
   label: string;
 }
 
+interface User {
+  id: string;
+  username: string;
+  full_name: string;
+  department?: string;
+}
+
 export default function EditInitiativePage() {
   const router = useRouter();
   const params = useParams();
@@ -49,10 +56,10 @@ export default function EditInitiativePage() {
   // 系統選項
   const [initiativeTypes, setInitiativeTypes] = useState<SystemOption[]>([]);
   const [departments, setDepartments] = useState<SystemOption[]>([]);
-  const [persons, setPersons] = useState<SystemOption[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
   const [fundingSources, setFundingSources] = useState<SystemOption[]>([]);
   const [indicators, setIndicators] = useState<SystemOption[]>([]);
-  
+
   const [formData, setFormData] = useState<InitiativeFormData>({
     initiative_id: '',
     name_zh: '',
@@ -64,8 +71,8 @@ export default function EditInitiativePage() {
     end_date: '',
     budget: 0,
     responsible_unit: '',
-    primary_owner: '',
-    co_owners: [],
+    primary_owner_id: '',
+    co_owner_ids: [],
     funding_sources: [],
     related_indicators: [],
     kpi_ids: [],
@@ -76,11 +83,11 @@ export default function EditInitiativePage() {
     const fetchData = async () => {
       try {
         // 載入所有選項
-        const [kpisRes, typesRes, deptsRes, personsRes, sourcesRes, indicatorsRes, initiativeRes] = await Promise.all([
+        const [kpisRes, typesRes, deptsRes, usersRes, sourcesRes, indicatorsRes, initiativeRes] = await Promise.all([
           kpiApi.getAll(),
           api.get('/system-options/category/initiative_type'),
           api.get('/system-options/category/department'),
-          api.get('/system-options/category/person'),
+          userApi.getActiveUsers(),
           api.get('/system-options/category/funding_source'),
           api.get('/system-options/category/indicator'),
           initiativeApi.getById(params.id as string),
@@ -89,13 +96,13 @@ export default function EditInitiativePage() {
         setKpis(kpisRes.data);
         setInitiativeTypes(typesRes.data);
         setDepartments(deptsRes.data);
-        setPersons(personsRes.data);
+        setUsers(usersRes.data);
         setFundingSources(sourcesRes.data);
         setIndicators(indicatorsRes.data);
 
         // 載入策略專案資料
         const initiative = initiativeRes.data;
-        
+
         // 格式化日期（從 YYYY-MM-DD 或 Date 物件）
         const formatDate = (date: any) => {
           if (!date) return '';
@@ -116,8 +123,8 @@ export default function EditInitiativePage() {
           end_date: formatDate(initiative.end_date),
           budget: initiative.budget || 0,
           responsible_unit: initiative.responsible_unit || '',
-          primary_owner: initiative.primary_owner || '',
-          co_owners: initiative.co_owners || [],
+          primary_owner_id: initiative.primary_owner_id || '',
+          co_owner_ids: initiative.co_owner_ids || [],
           funding_sources: initiative.funding_sources || [],
           related_indicators: initiative.related_indicators || [],
           kpi_ids: initiative.kpis?.map((k: any) => k.id) || [],
@@ -151,7 +158,8 @@ export default function EditInitiativePage() {
         end_date: formData.end_date || undefined,
         name_en: formData.name_en || undefined,
         kpi_ids: formData.kpi_ids.length > 0 ? formData.kpi_ids : undefined,
-        co_owners: formData.co_owners.length > 0 ? formData.co_owners : undefined,
+        primary_owner_id: formData.primary_owner_id || undefined,
+        co_owner_ids: formData.co_owner_ids.length > 0 ? formData.co_owner_ids : undefined,
         funding_sources: formData.funding_sources.length > 0 ? formData.funding_sources : undefined,
         related_indicators: formData.related_indicators.length > 0 ? formData.related_indicators : undefined,
         notes: formData.notes || undefined,
@@ -178,7 +186,7 @@ export default function EditInitiativePage() {
   };
 
   const handleMultiSelectChange = (
-    field: 'co_owners' | 'funding_sources' | 'related_indicators' | 'kpi_ids',
+    field: 'co_owner_ids' | 'funding_sources' | 'related_indicators' | 'kpi_ids',
     value: string,
     checked: boolean
   ) => {
@@ -410,18 +418,23 @@ export default function EditInitiativePage() {
                   主要負責人
                 </label>
                 <select
-                  name="primary_owner"
-                  value={formData.primary_owner}
+                  name="primary_owner_id"
+                  value={formData.primary_owner_id}
                   onChange={handleInputChange}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
                   <option value="">請選擇</option>
-                  {persons.map((person) => (
-                    <option key={person.id} value={person.value}>
-                      {person.label}
+                  {users.map((user) => (
+                    <option key={user.id} value={user.id}>
+                      {user.full_name} {user.department ? `(${user.department})` : ''}
                     </option>
                   ))}
                 </select>
+                <p className="text-xs text-gray-500 mt-1">
+                  <Link href="/settings/users" className="text-blue-600 hover:underline">
+                    管理人員
+                  </Link>
+                </p>
               </div>
             </div>
 
@@ -430,17 +443,17 @@ export default function EditInitiativePage() {
                 共同負責人（可多選）
               </label>
               <div className="max-h-40 overflow-y-auto border border-gray-200 rounded p-3 grid grid-cols-3 gap-2">
-                {persons.map((person) => (
-                  <label key={person.id} className="flex items-center space-x-2 cursor-pointer">
+                {users.map((user) => (
+                  <label key={user.id} className="flex items-center space-x-2 cursor-pointer">
                     <input
                       type="checkbox"
-                      checked={formData.co_owners.includes(person.value)}
+                      checked={formData.co_owner_ids.includes(user.id)}
                       onChange={(e) =>
-                        handleMultiSelectChange('co_owners', person.value, e.target.checked)
+                        handleMultiSelectChange('co_owner_ids', user.id, e.target.checked)
                       }
                       className="rounded"
                     />
-                    <span className="text-sm">{person.label}</span>
+                    <span className="text-sm">{user.full_name}</span>
                   </label>
                 ))}
               </div>

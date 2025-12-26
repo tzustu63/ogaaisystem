@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { kpiApi, systemOptionsApi } from '@/lib/api';
+import { kpiApi, userApi } from '@/lib/api';
 import Link from 'next/link';
 
 interface KPIFormData {
@@ -12,7 +12,7 @@ interface KPIFormData {
   definition: string;
   formula: string;
   data_source: string;
-  data_steward: string;
+  data_steward_id: string;
   update_frequency: string;
   target_value: {
     annual?: number;
@@ -31,11 +31,18 @@ interface ExistingKPI {
   kpi_id: string;
 }
 
+interface User {
+  id: string;
+  username: string;
+  full_name: string;
+  department?: string;
+}
+
 export default function NewKPIPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [existingKPIs, setExistingKPIs] = useState<ExistingKPI[]>([]);
-  const [personnelList, setPersonnelList] = useState<string[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
   const [formData, setFormData] = useState<KPIFormData>({
     kpi_id: '',
     name_zh: '',
@@ -43,7 +50,7 @@ export default function NewKPIPage() {
     definition: '',
     formula: '',
     data_source: '',
-    data_steward: '',
+    data_steward_id: '',
     update_frequency: 'monthly',
     target_value: {
       annual: 0,
@@ -92,15 +99,9 @@ export default function NewKPIPage() {
         const initialId = generateNextKpiId(kpis);
         setFormData(prev => ({ ...prev, kpi_id: initialId }));
 
-        // 載入人員名單
-        const personnelResponse = await systemOptionsApi.getByCategory('person');
-        if (personnelResponse.data && personnelResponse.data.length > 0) {
-          // 只載入啟用的人員，並使用顯示名稱（label）
-          const names = personnelResponse.data
-            .filter((p: any) => p.is_active)
-            .map((p: any) => p.label);
-          setPersonnelList(names);
-        }
+        // 載入啟用的用戶列表
+        const usersResponse = await userApi.getActiveUsers();
+        setUsers(usersResponse.data || []);
       } catch (error) {
         console.error('Error fetching data:', error);
         // 即使獲取失敗，也設定一個預設值
@@ -279,22 +280,26 @@ export default function NewKPIPage() {
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  資料負責人 <span className="text-red-500">*</span>
+                  資料負責人
                 </label>
                 <select
-                  name="data_steward"
-                  value={formData.data_steward}
+                  name="data_steward_id"
+                  value={formData.data_steward_id}
                   onChange={handleInputChange}
-                  required
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
                   <option value="">請選擇負責人</option>
-                  {personnelList.map((person) => (
-                    <option key={person} value={person}>
-                      {person}
+                  {users.map((user) => (
+                    <option key={user.id} value={user.id}>
+                      {user.full_name} {user.department ? `(${user.department})` : ''}
                     </option>
                   ))}
                 </select>
+                <p className="text-xs text-gray-500 mt-1">
+                  <Link href="/settings/users" className="text-blue-600 hover:underline">
+                    管理人員
+                  </Link>
+                </p>
               </div>
             </div>
           </div>

@@ -17,11 +17,11 @@ interface SystemOption {
 const CATEGORIES = [
   { key: 'initiative_type', label: '專案類型', description: '策略專案的類型分類' },
   { key: 'department', label: '負責單位', description: '組織內的部門/單位' },
-  { key: 'person', label: '人員名單', description: '可指派為負責人的人員' },
   { key: 'funding_source', label: '經費來源', description: '專案的經費來源類別' },
   { key: 'indicator', label: '對應指標', description: '專案相關的績效指標' },
   { key: 'academic_year', label: '學年度', description: 'OKR 目標使用的學年度選項（數值格式，例如：114）' },
 ];
+// 注意：人員名單已整合到「系統設定 > 人員管理」功能
 
 export default function SystemOptionsPage() {
   const [options, setOptions] = useState<Record<string, SystemOption[]>>({});
