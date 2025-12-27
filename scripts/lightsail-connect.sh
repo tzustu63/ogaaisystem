@@ -13,7 +13,7 @@ NC='\033[0m' # No Color
 
 # 配置（請根據你的實際情況修改）
 INSTANCE_NAME="${1:-oga-ai-system}"
-SSH_KEY_PATH="${SSH_KEY_PATH:-~/.ssh/lightsail-key.pem}"
+SSH_KEY_PATH="${SSH_KEY_PATH:-$(cd "$(dirname "$0")/.." && pwd)/lightsail.pem}"
 REGION="${AWS_REGION:-ap-northeast-1}"  # 東京區域，可改為其他區域
 
 echo -e "${GREEN}🔗 連接到 AWS Lightsail 實例...${NC}"
@@ -94,5 +94,7 @@ ssh -i "$SSH_KEY_PATH" \
     -o StrictHostKeyChecking=no \
     -o UserKnownHostsFile=/dev/null \
     "$USERNAME@$PUBLIC_IP"
+
+
 
 

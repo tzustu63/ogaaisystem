@@ -100,7 +100,10 @@ export const validateKPIDefinition = (kpi: any): KPIValidationResult => {
   if (!kpi.definition) errors.push('KPI 定義為必填');
   if (!kpi.formula) errors.push('KPI 公式為必填');
   if (!kpi.data_source) errors.push('資料來源為必填');
-  if (!kpi.data_steward) errors.push('資料負責人為必填');
+  // 資料負責人可以是 data_steward（文字）或 data_steward_id（UUID）
+  if (!kpi.data_steward && !kpi.data_steward_id) {
+    warnings.push('建議設定資料負責人');
+  }
 
   // 驗證 KPI ID 格式
   if (kpi.kpi_id && !validateKPIId(kpi.kpi_id)) {

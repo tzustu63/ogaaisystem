@@ -224,11 +224,14 @@ router.put('/:id', authenticate, async (req: AuthRequest, res) => {
 
     updateFields.push(`current_version = $${paramIndex}`);
     updateValues.push(newVersion);
+    paramIndex++;
     updateFields.push(`updated_at = CURRENT_TIMESTAMP`);
+
+    // 加入 WHERE 條件的 id 參數
     updateValues.push(id);
 
     await pool.query(
-      `UPDATE kpi_registry SET ${updateFields.join(', ')} WHERE id = $${paramIndex + 1}`,
+      `UPDATE kpi_registry SET ${updateFields.join(', ')} WHERE id = $${paramIndex}`,
       updateValues
     );
 
@@ -279,11 +282,14 @@ router.post('/:id/values', authenticate, async (req: AuthRequest, res) => {
     }
 
     const kpi = kpiResult.rows[0];
-    const thresholds = kpi.thresholds;
+    const thresholds = kpi.thresholds || {};
 
     // 計算燈號
     let status = 'red';
-    if (thresholds.mode === 'fixed') {
+    if (!thresholds.mode) {
+      // 如果沒有設定閾值模式，使用預設值
+      status = 'yellow';
+    } else if (thresholds.mode === 'fixed') {
       const greenMin = thresholds.green?.min ?? thresholds.green?.value ?? Infinity;
       const yellowMin = thresholds.yellow?.min ?? thresholds.yellow?.value ?? Infinity;
       

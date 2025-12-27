@@ -14,7 +14,7 @@ NC='\033[0m'
 
 # 配置
 INSTANCE_NAME="${1:-oga-ai-system}"
-SSH_KEY_PATH="${SSH_KEY_PATH:-~/.ssh/lightsail-key.pem}"
+SSH_KEY_PATH="${SSH_KEY_PATH:-$(cd "$(dirname "$0")/.." && pwd)/lightsail.pem}"
 REGION="${AWS_REGION:-ap-northeast-1}"
 PROJECT_DIR="/home/ubuntu/oga-ai-system"
 
@@ -142,5 +142,7 @@ echo ""
 echo -e "${YELLOW}💡 提示：${NC}"
 echo "  1. 確保 Lightsail 防火牆規則允許端口 13000 和 13001"
 echo "  2. 查看日誌: ssh -i $SSH_KEY_PATH $USERNAME@$PUBLIC_IP 'cd $PROJECT_DIR && docker-compose logs -f'"
+
+
 
 

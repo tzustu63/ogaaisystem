@@ -1,0 +1,153 @@
+# 生產環境 Docker Compose (Lightsail)
+# 使用方式: docker-compose -f docker-compose.prod.yml up -d
+
+services:
+  # PostgreSQL 資料庫
+  postgres:
+    image: postgres:15-alpine
+    container_name: oga-postgres
+    environment:
+      POSTGRES_DB: oga_ai_system
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    ports:
+      - "15437:5432"  # 避免與其他專案衝突
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./packages/backend/src/db/migrations:/docker-entrypoint-initdb.d/migrations:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - oga-network
+    restart: unless-stopped
+
+  # Redis 快取
+  redis:
+    image: redis:7-alpine
+    container_name: oga-redis
+    ports:
+      - "16383:6379"  # 避免與其他專案衝突
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - oga-network
+    restart: unless-stopped
+
+  # MinIO 物件儲存
+  minio:
+    image: minio/minio:latest
+    container_name: oga-minio
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-minioadmin}
+    ports:
+      - "19000:9000"  # 避免與其他專案衝突
+      - "19001:9001"
+    volumes:
+      - minio_data:/data
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    networks:
+      - oga-network
+    restart: unless-stopped
+
+  # Backend API 服務
+  backend:
+    build:
+      context: .
+      dockerfile: packages/backend/Dockerfile
+    container_name: oga-backend
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: oga_ai_system
+      DB_USER: postgres
+      DB_PASSWORD: ${DB_PASSWORD:-postgres}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      MINIO_ENDPOINT: minio
+      MINIO_PORT: 9000
+      MINIO_USE_SSL: "false"
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin}
+      MINIO_BUCKET: oga-ai-system
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRES_IN: 7d
+      GOOGLE_AI_API_KEY: ${GOOGLE_AI_API_KEY}
+    ports:
+      - "13001:3001"
+    volumes:
+      - backend_logs:/app/logs
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    networks:
+      - oga-network
+    restart: unless-stopped
+    command: >
+      sh -c "
+        echo '等待資料庫就緒...' &&
+        sleep 5 &&
+        echo '執行資料庫遷移...' &&
+        cd /app/packages/backend &&
+        for f in /app/packages/backend/src/db/migrations/*.sql; do
+          echo \"執行遷移: \$f\" &&
+          npm run migrate \"\$(basename \$f)\" 2>&1 || echo \"遷移 \$(basename \$f) 可能已執行\"
+        done &&
+        echo '啟動後端服務...' &&
+        npm start
+      "
+
+  # Frontend 應用
+  frontend:
+    build:
+      context: .
+      dockerfile: packages/frontend/Dockerfile
+      args:
+        # 生產環境使用實際 IP 或域名
+        NEXT_PUBLIC_API_URL: ${API_URL:-http://18.181.71.46:13001/api}
+    container_name: oga-frontend
+    environment:
+      NODE_ENV: production
+    ports:
+      - "13000:3000"
+    depends_on:
+      backend:
+        condition: service_started
+    networks:
+      - oga-network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  minio_data:
+    driver: local
+  backend_logs:
+    driver: local
+
+networks:
+  oga-network:
+    driver: bridge
