@@ -11,12 +11,22 @@ const PORT = process.env.PORT || 3001;
 // Middleware
 app.use(helmet());
 // CORS 配置：允許前端來源
+const allowedOrigins = [
+  'http://localhost:23000',     // MCP 前端
+  'http://localhost:13000',     // 本機前端
+  'http://localhost:3000',      // 開發環境
+  'http://18.181.71.46:13000',  // Lightsail 生產環境
+  'http://harvestwize.com:13000', // 域名（如有設定）
+];
+
+// 支援環境變數覆蓋
+if (process.env.CORS_ORIGINS) {
+  const envOrigins = process.env.CORS_ORIGINS.split(',').map(o => o.trim());
+  allowedOrigins.push(...envOrigins);
+}
+
 app.use(cors({
-  origin: [
-    'http://localhost:23000',  // MCP 前端
-    'http://localhost:13000',  // 原有前端
-    'http://localhost:3000',   // 開發環境
-  ],
+  origin: allowedOrigins,
   credentials: true,
 }));
 app.use(express.json());
