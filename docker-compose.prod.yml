@@ -106,15 +106,24 @@ services:
     restart: unless-stopped
     command: >
       sh -c "
-        echo '等待資料庫就緒...' &&
+        echo 'Waiting for database...' &&
         sleep 5 &&
-        echo '執行資料庫遷移...' &&
+        echo 'Running migrations...' &&
         cd /app/packages/backend &&
-        for f in /app/packages/backend/src/db/migrations/*.sql; do
-          echo \"執行遷移: \$f\" &&
-          npm run migrate \"\$(basename \$f)\" 2>&1 || echo \"遷移 \$(basename \$f) 可能已執行\"
-        done &&
-        echo '啟動後端服務...' &&
+        npm run migrate 001_initial_schema.sql 2>&1 || echo 'Migration 001 may already exist' &&
+        npm run migrate 002_add_missing_features.sql 2>&1 || echo 'Migration 002 may already exist' &&
+        npm run migrate 003_create_default_admin.sql 2>&1 || echo 'Migration 003 may already exist' &&
+        npm run migrate 004_integrate_kr_kpi.sql 2>&1 || echo 'Migration 004 may already exist' &&
+        npm run migrate 005_system_settings.sql 2>&1 || echo 'Migration 005 may already exist' &&
+        npm run migrate 008_remove_raci_workflows.sql 2>&1 || echo 'Migration 008 may already exist' &&
+        npm run migrate 009_add_task_kr_contribution.sql 2>&1 || echo 'Migration 009 may already exist' &&
+        npm run migrate 010_add_pdca_execution_check_point.sql 2>&1 || echo 'Migration 010 may already exist' &&
+        npm run migrate 011_add_task_funding_fields.sql 2>&1 || echo 'Migration 011 may already exist' &&
+        npm run migrate 012_create_chat_tables.sql 2>&1 || echo 'Migration 012 may already exist' &&
+        npm run migrate 013_create_ai_settings.sql 2>&1 || echo 'Migration 013 may already exist' &&
+        npm run migrate 014_expand_ai_settings.sql 2>&1 || echo 'Migration 014 may already exist' &&
+        npm run migrate 015_merge_person_to_users.sql 2>&1 || echo 'Migration 015 may already exist' &&
+        echo 'Starting backend...' &&
         npm start
       "
 
