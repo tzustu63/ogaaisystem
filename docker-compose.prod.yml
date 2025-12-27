@@ -133,8 +133,8 @@ services:
       context: .
       dockerfile: packages/frontend/Dockerfile
       args:
-        # 生產環境使用實際 IP 或域名
-        NEXT_PUBLIC_API_URL: ${API_URL:-http://18.181.71.46:13001/api}
+        # 生產環境使用域名（透過 Nginx 反向代理）
+        NEXT_PUBLIC_API_URL: ${API_URL:-https://oga.harvestwize.com/api}
     container_name: oga-frontend
     environment:
       NODE_ENV: production

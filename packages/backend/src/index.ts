@@ -15,8 +15,9 @@ const allowedOrigins = [
   'http://localhost:23000',     // MCP 前端
   'http://localhost:13000',     // 本機前端
   'http://localhost:3000',      // 開發環境
-  'http://18.181.71.46:13000',  // Lightsail 生產環境
-  'http://harvestwize.com:13000', // 域名（如有設定）
+  'http://18.181.71.46:13000',  // Lightsail 生產環境 (IP)
+  'https://oga.harvestwize.com', // 生產環境域名 (HTTPS)
+  'http://oga.harvestwize.com',  // 生產環境域名 (HTTP)
 ];
 
 // 支援環境變數覆蓋
