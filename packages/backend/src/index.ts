@@ -20,8 +20,39 @@ const app = express();
 const config = getConfig();
 const PORT = config.PORT;
 
-// Middleware
-app.use(helmet());
+// Middleware - 安全標頭設定
+app.use(helmet({
+  // 防止點擊劫持
+  frameguard: { action: 'deny' },
+  // 防止 MIME 類型嗅探
+  noSniff: true,
+  // XSS 過濾器
+  xssFilter: true,
+  // 隱藏 X-Powered-By
+  hidePoweredBy: true,
+  // HSTS (透過 Cloudflare 處理，這裡設定較短時間)
+  hsts: {
+    maxAge: 31536000, // 1 年
+    includeSubDomains: true,
+  },
+  // Content Security Policy
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", "data:", "blob:"],
+      connectSrc: ["'self'", "https://generativelanguage.googleapis.com"],
+      fontSrc: ["'self'"],
+      objectSrc: ["'none'"],
+      upgradeInsecureRequests: [],
+    },
+  },
+  // 防止 IE 下載時自動執行
+  ieNoOpen: true,
+  // DNS 預取控制
+  dnsPrefetchControl: { allow: false },
+}));
 
 // 全局速率限制
 app.use(globalRateLimiter);
