@@ -3,6 +3,11 @@ import { pool } from '../config/database';
 import { authenticate, AuthRequest } from '../middleware/auth';
 import { hasPermission } from '../services/rbac';
 import { z } from 'zod';
+import {
+  executeGDPRDeletion,
+  getSupportedDataTypes,
+  previewGDPRDeletion,
+} from '../services/gdpr-deletion';
 
 const router = Router();
 
@@ -269,38 +274,149 @@ router.post('/deletion-requests/:id/approve', authenticate, async (req: AuthRequ
     const { id } = req.params;
     const { completion_notes } = req.body;
 
-    // 更新狀態為已核准
-    const result = await pool.query(
-      `UPDATE data_deletion_requests 
-       SET status = 'approved',
-           approved_at = CURRENT_TIMESTAMP,
-           approved_by = $1
-       WHERE id = $2
-       RETURNING *`,
-      [req.user!.id, id]
+    // 取得刪除請求
+    const requestResult = await pool.query(
+      'SELECT * FROM data_deletion_requests WHERE id = $1',
+      [id]
     );
 
-    if (result.rows.length === 0) {
+    if (requestResult.rows.length === 0) {
       return res.status(404).json({ error: '刪除請求不存在' });
     }
 
-    // TODO: 實際執行資料刪除邏輯
-    // 這裡應該根據 requested_data_types 刪除對應的資料
+    const deletionRequest = requestResult.rows[0];
 
-    // 標記為已完成
+    // 檢查狀態
+    if (deletionRequest.status !== 'pending') {
+      return res.status(400).json({
+        error: `無法核准此請求，目前狀態為: ${deletionRequest.status}`,
+      });
+    }
+
+    // 更新狀態為已核准
     await pool.query(
-      `UPDATE data_deletion_requests 
-       SET status = 'completed',
-           completed_at = CURRENT_TIMESTAMP,
-           completion_notes = $1
+      `UPDATE data_deletion_requests
+       SET status = 'approved',
+           approved_at = CURRENT_TIMESTAMP,
+           approved_by = $1
        WHERE id = $2`,
-      [completion_notes || null, id]
+      [req.user!.id, id]
     );
 
-    res.json({ success: true, message: '刪除請求已核准並執行' });
+    // 執行 GDPR 資料刪除
+    const deletionResult = await executeGDPRDeletion(
+      deletionRequest.requestor_id,
+      deletionRequest.requested_data_types
+    );
+
+    // 根據刪除結果更新狀態
+    const finalStatus = deletionResult.success ? 'completed' : 'failed';
+    const notes = completion_notes
+      ? `${completion_notes}\n\n刪除結果: ${JSON.stringify(deletionResult, null, 2)}`
+      : `刪除結果: ${JSON.stringify(deletionResult, null, 2)}`;
+
+    await pool.query(
+      `UPDATE data_deletion_requests
+       SET status = $1,
+           completed_at = CURRENT_TIMESTAMP,
+           completion_notes = $2
+       WHERE id = $3`,
+      [finalStatus, notes, id]
+    );
+
+    res.json({
+      success: deletionResult.success,
+      message: deletionResult.success
+        ? '刪除請求已核准並執行完成'
+        : '刪除請求執行時發生部分錯誤',
+      deletionResult,
+    });
   } catch (error: unknown) {
     console.error('Error approving deletion request:', error);
     res.status(500).json({ error: '核准刪除請求失敗' });
+  }
+});
+
+// 取得支援的資料類型清單
+router.get('/data-types', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const canView = await hasPermission(req.user!.id, 'view_gdpr');
+    if (!canView) {
+      return res.status(403).json({ error: '無權限查看' });
+    }
+
+    const dataTypes = getSupportedDataTypes();
+    res.json(dataTypes);
+  } catch (error: unknown) {
+    console.error('Error fetching data types:', error);
+    res.status(500).json({ error: '取得資料類型列表失敗' });
+  }
+});
+
+// 預覽刪除影響
+router.post('/deletion-requests/preview', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const canView = await hasPermission(req.user!.id, 'view_gdpr');
+    if (!canView) {
+      return res.status(403).json({ error: '無權限查看' });
+    }
+
+    const { requestor_id, requested_data_types } = req.body;
+
+    if (!requestor_id || !Array.isArray(requested_data_types)) {
+      return res.status(400).json({
+        error: '請提供 requestor_id 和 requested_data_types',
+      });
+    }
+
+    const preview = await previewGDPRDeletion(requestor_id, requested_data_types);
+    res.json({
+      preview,
+      totalRecords: preview.reduce((sum, p) => sum + Math.max(0, p.recordCount), 0),
+    });
+  } catch (error: unknown) {
+    console.error('Error previewing deletion:', error);
+    res.status(500).json({ error: '預覽刪除影響失敗' });
+  }
+});
+
+// 拒絕刪除請求
+router.post('/deletion-requests/:id/reject', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const canManage = await hasPermission(req.user!.id, 'manage_gdpr');
+    if (!canManage) {
+      return res.status(403).json({ error: '無權限拒絕' });
+    }
+
+    const { id } = req.params;
+    const { rejection_reason } = req.body;
+
+    if (!rejection_reason) {
+      return res.status(400).json({ error: '請提供拒絕原因' });
+    }
+
+    const result = await pool.query(
+      `UPDATE data_deletion_requests
+       SET status = 'rejected',
+           completed_at = CURRENT_TIMESTAMP,
+           completion_notes = $1
+       WHERE id = $2 AND status = 'pending'
+       RETURNING *`,
+      [rejection_reason, id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: '刪除請求不存在或狀態不是待處理' });
+    }
+
+    res.json({
+      success: true,
+      message: '刪除請求已拒絕',
+      request: result.rows[0],
+    });
+  } catch (error: unknown) {
+    console.error('Error rejecting deletion request:', error);
+    res.status(500).json({ error: '拒絕刪除請求失敗' });
   }
 });
 

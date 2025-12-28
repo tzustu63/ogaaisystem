@@ -1,5 +1,30 @@
 import { pool } from '../config/database';
 
+// 安全性：允許查詢的資源類型白名單
+const ALLOWED_RESOURCE_TYPES: Record<string, string> = {
+  initiatives: 'initiatives',
+  incidents: 'incidents',
+  tasks: 'tasks',
+  kpi_registry: 'kpi_registry',
+  pdca_cycles: 'pdca_cycles',
+  okrs: 'okrs',
+};
+
+// 驗證資源類型是否在白名單中
+const getValidTableName = (resourceType: string): string | null => {
+  return ALLOWED_RESOURCE_TYPES[resourceType] || null;
+};
+
+// 安全地解析 JSON，避免崩潰
+const safeJsonParse = <T>(json: string | null, defaultValue: T): T => {
+  if (!json) return defaultValue;
+  try {
+    return JSON.parse(json) as T;
+  } catch {
+    return defaultValue;
+  }
+};
+
 export interface UserRole {
   roleId: string;
   roleName: string;
@@ -126,15 +151,20 @@ export const getAccessibleResources = async (
   userId: string,
   resourceType: string
 ): Promise<string[]> => {
+  // 安全性：驗證 resourceType 是否在白名單中
+  const tableName = getValidTableName(resourceType);
+  if (!tableName) {
+    console.warn(`getAccessibleResources: 無效的資源類型 "${resourceType}"`);
+    return [];
+  }
+
   const roles = await getUserRoles(userId);
 
   // 系統管理員可以存取所有資源
   const isAdmin = roles.some((r) => r.roleName === 'system_admin' || r.roleName === 'admin');
   if (isAdmin) {
-    // 返回所有資源 ID
-    const result = await pool.query(
-      `SELECT id FROM ${resourceType}`
-    );
+    // 使用白名單驗證後的表名
+    const result = await pool.query(`SELECT id FROM ${tableName}`);
     return result.rows.map((r) => r.id);
   }
 
@@ -142,8 +172,8 @@ export const getAccessibleResources = async (
   const resourceIds: string[] = [];
   for (const role of roles) {
     if (role.scopeType === 'university') {
-      // 全校範圍，取得所有資源
-      const result = await pool.query(`SELECT id FROM ${resourceType}`);
+      // 全校範圍，取得所有資源（使用白名單驗證後的表名）
+      const result = await pool.query(`SELECT id FROM ${tableName}`);
       resourceIds.push(...result.rows.map((r) => r.id));
     } else if (role.scopeType === 'project') {
       // 特定專案範圍
@@ -166,7 +196,8 @@ export const getAccessibleResources = async (
     } else if (role.scopeType === 'student_group') {
       // 特定學生群組
       if (resourceType === 'incidents') {
-        const studentIds = JSON.parse(role.scopeValue || '[]');
+        // 使用安全的 JSON 解析
+        const studentIds = safeJsonParse<string[]>(role.scopeValue, []);
         if (studentIds.length > 0) {
           const result = await pool.query(
             'SELECT id FROM incidents WHERE student_id = ANY($1::text[])',

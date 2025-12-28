@@ -199,7 +199,7 @@ AI 會：
 
 ### 前置需求
 
-- Google AI API Key (已配置: AIzaSyD6ldujQmbPgkXZmdxmC3Uk4QIyGSBVbxQ)
+- Google AI API Key (需在環境變數 GOOGLE_AI_API_KEY 中設定)
 - PostgreSQL 資料庫
 - Docker 和 Docker Compose
 

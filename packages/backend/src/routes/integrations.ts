@@ -3,6 +3,7 @@ import { pool } from '../config/database';
 import { authenticate, AuthRequest } from '../middleware/auth';
 import { hasPermission } from '../services/rbac';
 import { z } from 'zod';
+import { executeSync, SyncResult } from '../services/integration-sync';
 
 const router = Router();
 
@@ -142,42 +143,78 @@ router.post('/:id/sync', authenticate, async (req: AuthRequest, res: Response) =
       return res.status(404).json({ error: '系統對接不存在' });
     }
 
-    // 建立同步記錄
+    // 建立同步記錄（狀態為 running）
     const logResult = await pool.query(
       `INSERT INTO integration_sync_logs (
         integration_id, sync_type, status, started_at, synced_by
-      ) VALUES ($1, $2, 'pending', CURRENT_TIMESTAMP, $3)
+      ) VALUES ($1, $2, 'running', CURRENT_TIMESTAMP, $3)
       RETURNING *`,
       [id, sync_type, req.user!.id]
     );
 
-    // TODO: 實際執行同步邏輯
-    // 這裡應該根據 system_type 和 connection_config 執行對應的同步邏輯
+    const logId = logResult.rows[0].id;
 
-    // 更新同步記錄為成功（簡化處理）
-    await pool.query(
-      `UPDATE integration_sync_logs 
-       SET status = 'success',
-           completed_at = CURRENT_TIMESTAMP,
-           records_synced = 0
-       WHERE id = $1`,
-      [logResult.rows[0].id]
-    );
+    // 執行同步（非同步，避免請求超時）
+    executeSync(id, sync_type as 'full' | 'incremental')
+      .then(async (syncResult: SyncResult) => {
+        // 更新同步記錄
+        await pool.query(
+          `UPDATE integration_sync_logs
+           SET status = $1,
+               completed_at = CURRENT_TIMESTAMP,
+               records_synced = $2,
+               records_failed = $3,
+               error_message = $4
+           WHERE id = $5`,
+          [
+            syncResult.success ? 'success' : 'failed',
+            syncResult.recordsSynced,
+            syncResult.recordsFailed,
+            syncResult.errors.length > 0
+              ? JSON.stringify(syncResult.errors.slice(0, 10))
+              : null,
+            logId,
+          ]
+        );
 
-    // 更新系統對接的最後同步時間
-    await pool.query(
-      `UPDATE system_integrations 
-       SET last_sync_at = CURRENT_TIMESTAMP,
-           last_sync_status = 'success',
-           last_sync_error = NULL
-       WHERE id = $1`,
-      [id]
-    );
+        // 更新系統對接的最後同步時間
+        await pool.query(
+          `UPDATE system_integrations
+           SET last_sync_at = CURRENT_TIMESTAMP,
+               last_sync_status = $1,
+               last_sync_error = $2
+           WHERE id = $3`,
+          [
+            syncResult.success ? 'success' : 'failed',
+            syncResult.errors.length > 0 ? syncResult.errors[0].error : null,
+            id,
+          ]
+        );
+      })
+      .catch(async (error) => {
+        // 同步失敗時更新記錄
+        await pool.query(
+          `UPDATE integration_sync_logs
+           SET status = 'failed',
+               completed_at = CURRENT_TIMESTAMP,
+               error_message = $1
+           WHERE id = $2`,
+          [error instanceof Error ? error.message : '同步失敗', logId]
+        );
+
+        await pool.query(
+          `UPDATE system_integrations
+           SET last_sync_status = 'failed',
+               last_sync_error = $1
+           WHERE id = $2`,
+          [error instanceof Error ? error.message : '同步失敗', id]
+        );
+      });
 
     res.json({
       success: true,
-      sync_log_id: logResult.rows[0].id,
-      message: '同步已觸發',
+      sync_log_id: logId,
+      message: '同步已觸發，請稍後查詢同步狀態',
     });
   } catch (error: unknown) {
     console.error('Error triggering sync:', error);

@@ -84,9 +84,9 @@ services:
       MINIO_ACCESS_KEY: minioadmin
       MINIO_SECRET_KEY: minioadmin
       MINIO_BUCKET: oga-ai-system
-      JWT_SECRET: ${JWT_SECRET:-your-secret-key-change-in-production}
+      JWT_SECRET: ${JWT_SECRET:-oga-ai-system-jwt-secret-key-minimum-32-characters-for-security}
       JWT_EXPIRES_IN: 7d
-      GOOGLE_AI_API_KEY: AIzaSyA_LbyTykc7yWvwQL7WIAqabmMFakS42NI
+      GOOGLE_AI_API_KEY: ${GOOGLE_AI_API_KEY:-}
     ports:
       - "13001:3001"
     volumes:
@@ -118,6 +118,11 @@ services:
         npm run migrate 010_add_pdca_execution_check_point.sql 2>&1 || echo '遷移 010 可能已執行' &&
         npm run migrate 011_add_task_funding_fields.sql 2>&1 || echo '遷移 011 可能已執行' &&
         npm run migrate 012_create_chat_tables.sql 2>&1 || echo '遷移 012 可能已執行' &&
+        npm run migrate 013_create_ai_settings.sql 2>&1 || echo '遷移 013 可能已執行' &&
+        npm run migrate 014_expand_ai_settings.sql 2>&1 || echo '遷移 014 可能已執行' &&
+        npm run migrate 015_merge_person_to_users.sql 2>&1 || echo '遷移 015 可能已執行' &&
+        npm run migrate 016_notification_settings.sql 2>&1 || echo '遷移 016 可能已執行' &&
+        npm run migrate 017_create_file_uploads.sql 2>&1 || echo '遷移 017 可能已執行' &&
         echo '啟動後端服務...' &&
         npm start
       "

@@ -4,9 +4,15 @@ import bcrypt from 'bcryptjs';
 import { pool } from '../config/database';
 import { getUserRoles } from '../services/rbac';
 import { z } from 'zod';
+import { getJwtSecret, getJwtExpiresIn } from '../config/jwt';
+import { loginRateLimiter } from '../middleware/rate-limit';
+import {
+  AUTH_COOKIE_NAME,
+  getAuthCookieOptions,
+  getClearCookieOptions,
+} from '../config/cookie';
 
 const router = Router();
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
 
 const loginSchema = z.object({
   username: z.string().min(1),
@@ -14,7 +20,7 @@ const loginSchema = z.object({
 });
 
 // 登入（簡化版，實際應整合 SSO）
-router.post('/login', async (req, res) => {
+router.post('/login', loginRateLimiter, async (req, res) => {
   try {
     const validated = loginSchema.parse(req.body);
     const { username, password } = validated;
@@ -31,12 +37,21 @@ router.post('/login', async (req, res) => {
 
     const user = userResult.rows[0];
 
-    // 驗證密碼（如果有密碼）
-    if (user.password_hash) {
-      const validPassword = await bcrypt.compare(password, user.password_hash);
-      if (!validPassword) {
-        return res.status(401).json({ error: '使用者名稱或密碼錯誤' });
-      }
+    // 檢查帳號是否啟用
+    if (!user.is_active) {
+      return res.status(401).json({ error: '帳號已被停用' });
+    }
+
+    // 安全性：必須有密碼才能登入（防止無密碼帳號被任意存取）
+    if (!user.password_hash) {
+      console.warn(`使用者 ${user.username} 嘗試登入但沒有設定密碼`);
+      return res.status(401).json({ error: '帳號尚未設定密碼，請聯繫管理員' });
+    }
+
+    // 驗證密碼
+    const validPassword = await bcrypt.compare(password, user.password_hash);
+    if (!validPassword) {
+      return res.status(401).json({ error: '使用者名稱或密碼錯誤' });
     }
 
     // 取得使用者角色
@@ -50,11 +65,16 @@ router.post('/login', async (req, res) => {
         username: user.username,
         roles: roleNames,
       },
-      JWT_SECRET,
-      { expiresIn: '24h' }
+      getJwtSecret(),
+      { expiresIn: getJwtExpiresIn() }
     );
 
+    // 設置 HttpOnly Cookie
+    res.cookie(AUTH_COOKIE_NAME, token, getAuthCookieOptions());
+
+    // 同時返回 token（向後相容 localStorage 方案）
     res.json({
+      success: true,
       token,
       user: {
         id: user.id,
@@ -62,6 +82,7 @@ router.post('/login', async (req, res) => {
         email: user.email,
         fullName: user.full_name,
         roles: roleNames,
+        mustChangePassword: user.must_change_password || false,
       },
     });
   } catch (error) {
@@ -71,6 +92,15 @@ router.post('/login', async (req, res) => {
     console.error('Error during login:', error);
     res.status(500).json({ error: '登入失敗' });
   }
+});
+
+// 登出
+router.post('/logout', (req, res) => {
+  res.clearCookie(AUTH_COOKIE_NAME, getClearCookieOptions());
+  res.json({
+    success: true,
+    message: '已成功登出',
+  });
 });
 
 // SSO 回調（簡化版，實際應整合真實 SSO）
@@ -96,12 +126,22 @@ router.post('/sso/callback', async (req, res) => {
 // 取得當前使用者資訊
 router.get('/me', async (req, res) => {
   try {
-    const token = req.headers.authorization?.replace('Bearer ', '');
+    // 支援 Cookie 和 Bearer Token 雙重認證
+    const cookieToken = req.cookies?.[AUTH_COOKIE_NAME];
+    const bearerToken = req.headers.authorization?.replace('Bearer ', '');
+    const token = cookieToken || bearerToken;
+
     if (!token) {
-      return res.status(401).json({ error: '未提供 token' });
+      return res.status(401).json({
+        success: false,
+        error: {
+          code: 'AUTHENTICATION_ERROR',
+          message: '未提供 token',
+        },
+      });
     }
 
-    const decoded = jwt.verify(token, JWT_SECRET) as {
+    const decoded = jwt.verify(token, getJwtSecret()) as {
       id: string;
       username: string;
     };
@@ -111,19 +151,33 @@ router.get('/me', async (req, res) => {
     ]);
 
     if (userResult.rows.length === 0) {
-      return res.status(404).json({ error: '使用者不存在' });
+      return res.status(404).json({
+        success: false,
+        error: {
+          code: 'NOT_FOUND',
+          message: '使用者不存在',
+        },
+      });
     }
 
     const roles = await getUserRoles(decoded.id);
 
     res.json({
+      success: true,
       user: {
         ...userResult.rows[0],
         roles: roles.map((r) => r.roleName),
       },
     });
   } catch (error) {
-    res.status(401).json({ error: '無效的 token' });
+    res.clearCookie(AUTH_COOKIE_NAME, getClearCookieOptions());
+    res.status(401).json({
+      success: false,
+      error: {
+        code: 'INVALID_TOKEN',
+        message: '無效的 token',
+      },
+    });
   }
 });
 

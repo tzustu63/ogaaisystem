@@ -7,10 +7,13 @@ const api = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
+  withCredentials: true, // 重要：允許發送/接收 cookies
 });
 
-// 請求攔截器：加入認證 token
+// 請求攔截器：向後相容 localStorage token
 api.interceptors.request.use((config) => {
+  // Cookie 會自動發送（withCredentials: true）
+  // 這裡只處理 localStorage fallback（向後相容）
   const token = localStorage.getItem('token');
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
@@ -23,8 +26,9 @@ api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
-      // 清除 token 並重定向到登入頁
+      // 清除 localStorage token（如果有）
       localStorage.removeItem('token');
+      localStorage.removeItem('currentUser');
       if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/login')) {
         window.location.href = '/login';
       }
@@ -188,6 +192,7 @@ export const auditApi = {
 export const authApi = {
   login: (username: string, password: string) =>
     api.post('/auth/login', { username, password }),
+  logout: () => api.post('/auth/logout'),
   getMe: () => api.get('/auth/me'),
 };
 

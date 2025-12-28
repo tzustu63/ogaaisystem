@@ -1,15 +1,31 @@
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
+import cookieParser from 'cookie-parser';
 import dotenv from 'dotenv';
 
+// 載入環境變數（必須在其他 imports 之前）
 dotenv.config();
 
+// 驗證環境變數
+import { validateEnv, getConfig } from './config/env-validator';
+validateEnv();
+
+// 錯誤處理中間件
+import { errorHandler, notFoundHandler } from './middleware/error-handler';
+// 速率限制中間件
+import { globalRateLimiter } from './middleware/rate-limit';
+
 const app = express();
-const PORT = process.env.PORT || 3001;
+const config = getConfig();
+const PORT = config.PORT;
 
 // Middleware
 app.use(helmet());
+
+// 全局速率限制
+app.use(globalRateLimiter);
+
 // CORS 配置：允許前端來源
 const allowedOrigins = [
   'http://localhost:23000',     // MCP 前端
@@ -30,6 +46,10 @@ app.use(cors({
   origin: allowedOrigins,
   credentials: true,
 }));
+
+// Cookie 解析（支援 HttpOnly Cookie 認證）
+app.use(cookieParser());
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -95,6 +115,12 @@ app.use('/api/ai-settings', aiSettingsRoutes);
 
 // 啟動排程任務
 startSchedulers();
+
+// 404 處理（放在所有路由之後）
+app.use(notFoundHandler);
+
+// 全局錯誤處理（必須放在最後）
+app.use(errorHandler);
 
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);

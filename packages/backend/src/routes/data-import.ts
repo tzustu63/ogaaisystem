@@ -1,11 +1,41 @@
 import { Router } from 'express';
 import { pool } from '../config/database';
 import { authenticate, AuthRequest } from '../middleware/auth';
+import { hasPermission } from '../services/rbac';
 import multer from 'multer';
 import * as XLSX from 'xlsx';
 import { z } from 'zod';
 
 const router = Router();
+
+// 安全性：允許匯入的表格白名單
+const ALLOWED_IMPORT_TABLES: Record<string, string[]> = {
+  kpi_values: ['kpi_id', 'period_year', 'period_month', 'actual_value', 'target_value', 'notes'],
+  kpi_registry: ['kpi_id', 'kpi_name', 'unit', 'data_source', 'owner_id', 'target_value'],
+  initiatives: ['name', 'description', 'status', 'start_date', 'end_date', 'budget'],
+  tasks: ['title', 'description', 'status', 'priority', 'assignee_id', 'due_date'],
+};
+
+// 驗證表名是否在白名單中
+const isAllowedTable = (tableName: string): boolean => {
+  return Object.keys(ALLOWED_IMPORT_TABLES).includes(tableName);
+};
+
+// 驗證欄位名是否在白名單中
+const validateFields = (tableName: string, fields: string[]): { valid: boolean; invalidFields: string[] } => {
+  const allowedFields = ALLOWED_IMPORT_TABLES[tableName];
+  if (!allowedFields) {
+    return { valid: false, invalidFields: fields };
+  }
+  const invalidFields = fields.filter(f => !allowedFields.includes(f));
+  return { valid: invalidFields.length === 0, invalidFields };
+};
+
+// 安全的識別符號驗證（防止 SQL 注入）
+const isValidIdentifier = (name: string): boolean => {
+  // 只允許英文字母、數字和底線，且必須以字母開頭
+  return /^[a-zA-Z][a-zA-Z0-9_]*$/.test(name);
+};
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -75,10 +105,35 @@ const importDataSchema = z.object({
 router.post('/import', authenticate, async (req: AuthRequest, res) => {
   const client = await pool.connect();
   try {
+    // 權限檢查
+    const canImport = await hasPermission(req.user!.id, 'import_data');
+    if (!canImport) {
+      return res.status(403).json({ error: '無權限匯入資料' });
+    }
+
     await client.query('BEGIN');
     const validated = importDataSchema.parse(req.body);
 
     const { target_table, field_mapping, data, validation_rules } = validated;
+
+    // 安全性檢查：驗證表名是否在白名單中
+    if (!isAllowedTable(target_table)) {
+      return res.status(400).json({
+        error: '不允許匯入到此表格',
+        allowed_tables: Object.keys(ALLOWED_IMPORT_TABLES),
+      });
+    }
+
+    // 安全性檢查：驗證所有欄位名是否合法
+    const targetFields = Object.keys(field_mapping);
+    const fieldValidation = validateFields(target_table, targetFields);
+    if (!fieldValidation.valid) {
+      return res.status(400).json({
+        error: '包含不允許的欄位',
+        invalid_fields: fieldValidation.invalidFields,
+        allowed_fields: ALLOWED_IMPORT_TABLES[target_table],
+      });
+    }
 
     // 驗證資料
     const errors: any[] = [];

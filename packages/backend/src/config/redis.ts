@@ -1,10 +1,19 @@
 import { createClient } from 'redis';
 import dotenv from 'dotenv';
+import { getConfig } from './env-validator';
 
 dotenv.config();
 
+// 取得已驗證的環境設定
+const config = getConfig();
+
+// 建立 Redis 連線 URL（支援密碼驗證）
+const redisUrl = config.REDIS_PASSWORD
+  ? `redis://:${config.REDIS_PASSWORD}@${config.REDIS_HOST}:${config.REDIS_PORT}`
+  : `redis://${config.REDIS_HOST}:${config.REDIS_PORT}`;
+
 const redisClient = createClient({
-  url: `redis://${process.env.REDIS_HOST || 'localhost'}:${process.env.REDIS_PORT || 6379}`,
+  url: redisUrl,
 });
 
 redisClient.on('error', (err) => console.error('❌ Redis Client Error', err));

@@ -1,19 +1,23 @@
 // @ts-ignore - minio 類型定義問題
 import { Client } from 'minio';
 import dotenv from 'dotenv';
+import { getConfig } from './env-validator';
 
 dotenv.config();
 
+// 取得已驗證的環境設定
+const config = getConfig();
+
 // MinIO 客戶端設定
 export const minioClient = new Client({
-  endPoint: process.env.MINIO_ENDPOINT || 'localhost',
-  port: parseInt(process.env.MINIO_PORT || '9000'),
-  useSSL: process.env.MINIO_USE_SSL === 'true',
-  accessKey: process.env.MINIO_ACCESS_KEY || 'minioadmin',
-  secretKey: process.env.MINIO_SECRET_KEY || 'minioadmin',
+  endPoint: config.MINIO_ENDPOINT,
+  port: config.MINIO_PORT,
+  useSSL: config.MINIO_USE_SSL,
+  accessKey: config.MINIO_ACCESS_KEY,
+  secretKey: config.MINIO_SECRET_KEY,
 });
 
-export const BUCKET_NAME = process.env.MINIO_BUCKET || 'oga-ai-system';
+export const BUCKET_NAME = config.MINIO_BUCKET;
 
 // 初始化 bucket（如果不存在）
 export const initBucket = async () => {
@@ -38,7 +42,7 @@ export const uploadFile = async (
 ): Promise<string> => {
   try {
     const objectName = `${Date.now()}-${fileName}`;
-    await minioClient.putObject(BUCKET_NAME, objectName, file, {
+    await minioClient.putObject(BUCKET_NAME, objectName, file, file.length, {
       'Content-Type': contentType,
     });
     return objectName;
@@ -50,7 +54,10 @@ export const uploadFile = async (
 
 // 取得檔案 URL
 export const getFileUrl = (objectName: string): string => {
-  return `${process.env.MINIO_PUBLIC_URL || `http://${process.env.MINIO_ENDPOINT}:${process.env.MINIO_PORT}`}/${BUCKET_NAME}/${objectName}`;
+  const publicUrl =
+    config.MINIO_PUBLIC_URL ||
+    `http://${config.MINIO_ENDPOINT}:${config.MINIO_PORT}`;
+  return `${publicUrl}/${BUCKET_NAME}/${objectName}`;
 };
 
 // 刪除檔案

@@ -2,6 +2,12 @@ import { Router, Response } from 'express';
 import { pool } from '../config/database';
 import { authenticate, AuthRequest } from '../middleware/auth';
 import { hasPermission } from '../services/rbac';
+import {
+  generateCSV,
+  translateHeaders,
+  formatDataQualityForCSV,
+  DATA_QUALITY_TRANSLATIONS,
+} from '../utils/csv-generator';
 
 const router = Router();
 
@@ -165,10 +171,27 @@ router.post('/reports/export', authenticate, async (req: AuthRequest, res: Respo
     );
 
     if (format === 'csv') {
-      // TODO: 實作 CSV 匯出
-      res.json({ message: 'CSV 匯出功能待實作', data: result.rows });
+      // 格式化資料並翻譯欄位名稱
+      const formattedData = formatDataQualityForCSV(result.rows);
+      const translatedData = translateHeaders(
+        formattedData,
+        DATA_QUALITY_TRANSLATIONS
+      );
+      const csv = generateCSV(translatedData);
+
+      // 設定回應標頭
+      const filename = `data-quality-report-${
+        new Date().toISOString().split('T')[0]
+      }.csv`;
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader(
+        'Content-Disposition',
+        `attachment; filename="${filename}"`
+      );
+      res.send(csv);
     } else {
       res.json({
+        success: true,
         format: 'json',
         exported_at: new Date().toISOString(),
         count: result.rows.length,
