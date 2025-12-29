@@ -43,9 +43,12 @@ router.get('/', authenticate, async (req: AuthRequest, res) => {
   try {
     const { initiative_id } = req.query;
     let query = `
-      SELECT o.*, 
+      SELECT o.*,
+             i.name_zh as initiative_name,
+             i.initiative_id as initiative_code,
              (SELECT COUNT(*) FROM key_results kr WHERE kr.okr_id = o.id) as kr_count
       FROM okrs o
+      LEFT JOIN initiatives i ON o.initiative_id = i.id
     `;
     const params: any[] = [];
 
@@ -54,7 +57,7 @@ router.get('/', authenticate, async (req: AuthRequest, res) => {
       params.push(initiative_id);
     }
 
-    query += ' ORDER BY o.quarter DESC, o.created_at DESC';
+    query += ' ORDER BY i.name_zh, o.quarter DESC, o.created_at DESC';
 
     const result = await pool.query(query, params);
     res.json(result.rows);
