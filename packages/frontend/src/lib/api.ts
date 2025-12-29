@@ -215,5 +215,35 @@ export const aiSettingsApi = {
   reset: (key: string) => api.post(`/ai-settings/reset/${key}`),
 };
 
+// Backup API
+export const backupApi = {
+  // 匯出
+  startExport: (data: { format: 'json' | 'sql'; excludeSensitive?: boolean }) =>
+    api.post('/backup/export', data),
+  getExportStatus: (backupId: string) =>
+    api.get(`/backup/export/${backupId}/status`),
+  downloadBackup: (backupId: string) =>
+    api.get(`/backup/export/${backupId}/download`, { responseType: 'blob' }),
+
+  // 匯入
+  uploadRestore: (file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return api.post('/backup/restore/upload', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+  },
+  getRestorePreview: (restoreId: string) =>
+    api.get(`/backup/restore/${restoreId}/preview`),
+  executeRestore: (restoreId: string, options: { mode: string; selectedTables?: string[] }) =>
+    api.post(`/backup/restore/${restoreId}/execute`, options),
+  getRestoreStatus: (restoreId: string) =>
+    api.get(`/backup/restore/${restoreId}/status`),
+
+  // 歷史
+  getHistory: (params?: { type?: string; limit?: number }) =>
+    api.get('/backup/history', { params }),
+};
+
 export default api;
 

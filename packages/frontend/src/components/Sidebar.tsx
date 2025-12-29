@@ -67,6 +67,7 @@ const menuItems: MenuItem[] = [
       { title: '通知設定', href: '/settings/notifications' },
       { title: '稽核日誌', href: '/settings/audit' },
       { title: '個資合規', href: '/settings/gdpr' },
+      { title: '資料備份', href: '/settings/backup' },
     ],
   },
 ];
