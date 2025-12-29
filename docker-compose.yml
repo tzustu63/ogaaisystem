@@ -123,6 +123,7 @@ services:
         npm run migrate 015_merge_person_to_users.sql 2>&1 || echo '遷移 015 可能已執行' &&
         npm run migrate 016_notification_settings.sql 2>&1 || echo '遷移 016 可能已執行' &&
         npm run migrate 017_create_file_uploads.sql 2>&1 || echo '遷移 017 可能已執行' &&
+        npm run migrate 018_make_bsc_perspective_nullable.sql 2>&1 || echo '遷移 018 可能已執行' &&
         echo '啟動後端服務...' &&
         npm start
       "

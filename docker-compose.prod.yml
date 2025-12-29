@@ -125,6 +125,7 @@ services:
         npm run migrate 015_merge_person_to_users.sql 2>&1 || echo 'Migration 015 may already exist' &&
         npm run migrate 016_notification_settings.sql 2>&1 || echo 'Migration 016 may already exist' &&
         npm run migrate 017_create_file_uploads.sql 2>&1 || echo 'Migration 017 may already exist' &&
+        npm run migrate 018_make_bsc_perspective_nullable.sql 2>&1 || echo 'Migration 018 may already exist' &&
         echo 'Starting backend...' &&
         npm start
       "

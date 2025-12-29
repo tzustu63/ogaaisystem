@@ -147,3 +147,4 @@ echo "  2. 查看日誌: ssh -i $SSH_KEY_PATH $USERNAME@$PUBLIC_IP 'cd $PROJECT_
 
 
 
+
