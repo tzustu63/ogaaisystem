@@ -164,6 +164,19 @@ export default function UsersPage() {
     }
   };
 
+  const handleDeleteUser = async (userId: string, username: string) => {
+    if (!confirm(`確定要刪除人員「${username}」嗎？此操作會將該帳號停用。`)) return;
+
+    try {
+      await userApi.deleteUser(userId);
+      await fetchUsers();
+      alert('人員已刪除（停用）');
+    } catch (error: any) {
+      console.error('Error deleting user:', error);
+      alert(error.response?.data?.error || '刪除人員失敗');
+    }
+  };
+
   const handleResetPassword = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedUserId || !newPassword) return;
@@ -381,6 +394,12 @@ export default function UsersPage() {
                         className={user.is_active ? 'text-orange-600 hover:text-orange-900' : 'text-green-600 hover:text-green-900'}
                       >
                         {user.is_active ? '停用' : '啟用'}
+                      </button>
+                      <button
+                        onClick={() => handleDeleteUser(user.id, user.full_name)}
+                        className="text-red-600 hover:text-red-900"
+                      >
+                        刪除
                       </button>
                     </div>
                   </td>
