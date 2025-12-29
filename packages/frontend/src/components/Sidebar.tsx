@@ -9,6 +9,7 @@ interface MenuItem {
   title: string;
   href: string;
   children?: { title: string; href: string }[];
+  external?: boolean;
 }
 
 const menuItems: MenuItem[] = [
@@ -50,6 +51,11 @@ const menuItems: MenuItem[] = [
   {
     title: '🤖 AI 小幫手',
     href: '/chat',
+  },
+  {
+    title: '🌐 國際招生系統',
+    href: 'https://ogacrm.harvestwize.com/',
+    external: true,
   },
   {
     title: '👥 系統設定',
@@ -255,6 +261,28 @@ export default function Sidebar() {
                     />
                   </svg>
                 </button>
+              ) : item.external ? (
+                <a
+                  href={item.href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-full flex items-center justify-between px-4 py-2.5 rounded-lg transition-all duration-200 hover:bg-gray-700 text-gray-300"
+                >
+                  <span className="font-medium">{item.title}</span>
+                  <svg
+                    className="w-4 h-4"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
+                    />
+                  </svg>
+                </a>
               ) : (
                 <Link
                   href={item.href}
