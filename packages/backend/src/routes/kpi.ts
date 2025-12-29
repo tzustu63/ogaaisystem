@@ -18,7 +18,7 @@ const createKPISchema = z.object({
   data_source: z.string().min(1),
   data_steward: z.string().optional(),           // 保留向後相容
   data_steward_id: z.string().uuid().optional(), // 新欄位：關聯 users 表
-  update_frequency: z.enum(['monthly', 'quarterly', 'ad_hoc']),
+  update_frequency: z.enum(['monthly', 'quarterly', 'semester', 'yearly']),
   target_value: z.record(z.any()).optional().default({}),
   thresholds: z.object({
     mode: z.enum(['fixed', 'relative', 'predictive']).optional().default('fixed'),

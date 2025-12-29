@@ -347,7 +347,8 @@ export default function EditKPIPage() {
               >
                 <option value="monthly">每月</option>
                 <option value="quarterly">每季</option>
-                <option value="ad_hoc">不定期</option>
+                <option value="semester">每學期</option>
+                <option value="yearly">每學年</option>
               </select>
             </div>
           </div>

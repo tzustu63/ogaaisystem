@@ -7,6 +7,15 @@ import ReactECharts from 'echarts-for-react';
 import Link from 'next/link';
 import TracePath from '@/components/TracePath';
 
+// 更新頻率中文對照
+const updateFrequencyLabels: Record<string, string> = {
+  monthly: '每月',
+  quarterly: '每季',
+  semester: '每學期',
+  yearly: '每學年',
+  ad_hoc: '不定期',
+};
+
 // KPI 例外標記組件
 function ExceptionMarker({ kpiId, period }: { kpiId: string; period: string }) {
   const [isException, setIsException] = useState(false);
@@ -326,7 +335,7 @@ export default function KPIDetailPage() {
                 </div>
                 <div>
                   <dt className="text-gray-600">更新頻率</dt>
-                  <dd>{kpi.update_frequency}</dd>
+                  <dd>{updateFrequencyLabels[kpi.update_frequency] || kpi.update_frequency}</dd>
                 </div>
                 <div>
                   <dt className="text-gray-600">當前版本</dt>
