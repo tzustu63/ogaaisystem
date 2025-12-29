@@ -19,13 +19,13 @@ const createKPISchema = z.object({
   data_steward: z.string().optional(),           // 保留向後相容
   data_steward_id: z.string().uuid().optional(), // 新欄位：關聯 users 表
   update_frequency: z.enum(['monthly', 'quarterly', 'ad_hoc']),
-  target_value: z.record(z.any()),
+  target_value: z.record(z.any()).optional().default({}),
   thresholds: z.object({
-    mode: z.enum(['fixed', 'relative', 'predictive']),
-    green: z.any(),
-    yellow: z.any(),
-    red: z.any(),
-  }),
+    mode: z.enum(['fixed', 'relative', 'predictive']).optional().default('fixed'),
+    green: z.any().optional(),
+    yellow: z.any().optional(),
+    red: z.any().optional(),
+  }).optional().default({ mode: 'fixed' }),
   evidence_requirements: z.array(z.string()).optional(),
   applicable_programs: z.array(z.string()).optional(),
 });
