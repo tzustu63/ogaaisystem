@@ -257,7 +257,7 @@ const DEFAULT_DATABASE_SCHEMA = `
 資料庫架構說明：
 
 1. 使用者
-- users: 使用者資料 (id, username, email, full_name, department, is_active, created_at)
+- users: 使用者資料 (id, username, email, full_name, department, position, is_active, created_at)
 
 2. KPI 管理
 - kpi_registry: KPI 註冊表 (id, kpi_id, name_zh, name_en, definition, formula, data_source, data_steward, update_frequency, target_value, thresholds, created_at)
@@ -265,23 +265,34 @@ const DEFAULT_DATABASE_SCHEMA = `
 - kpi_versions: KPI 版本歷史 (id, kpi_id, version_number, changes, created_at)
 
 3. 策略專案（Initiatives）
-- initiatives: 策略專案 (id, initiative_id, name_zh, name_en, initiative_type, status, risk_level, start_date, end_date, budget, responsible_unit, created_at)
+- initiatives: 策略專案 (id, initiative_id, name_zh, name_en, initiative_type, status, risk_level, start_date, end_date, budget, responsible_unit, primary_owner_id, created_at)
 - initiative_kpis: 策略專案與 KPI 關聯 (initiative_id, kpi_id, created_at)
 
 4. OKR 管理
-- okrs: 目標與關鍵結果 (id, initiative_id, quarter, objective, created_at)
-- key_results: 關鍵結果 (id, okr_id, kr_number, description, target_value, current_value, unit, status, progress, kpi_id, created_at)
+- okrs: 目標 (id, initiative_id, quarter, objective, created_at)
+- key_results: 關鍵結果 (id, okr_id, description, target_value, current_value, unit, progress_percentage, status, kpi_id, created_at)
+  - progress_percentage: 進度百分比（0-100 的數值）
+  - status 可能值: 'not_started', 'in_progress', 'at_risk', 'completed'
 
 5. 任務管理
 - tasks: 任務 (id, title, description, status, priority, due_date, assignee_id, kr_id, initiative_id, kpi_id, created_at)
   - status 可能值: 'todo', 'in_progress', 'review', 'done'
   - priority 可能值: 'low', 'medium', 'high', 'urgent'
+- task_attachments: 任務附件 (id, task_id, file_name, file_url, created_at)
 
 6. PDCA 循環
-- pdca_cycles: PDCA 循環 (id, name, initiative_id, okr_id, status, plan_content, do_content, check_content, act_content, created_at)
+- pdca_cycles: PDCA 循環 (id, cycle_name, initiative_id, okr_id, check_frequency, responsible_user_id, data_source, created_at)
+- pdca_plans: 計畫 (id, pdca_cycle_id, plan_description, target_value, check_points, created_at)
+- pdca_executions: 執行紀錄 (id, pdca_cycle_id, execution_date, actual_value, evidence_urls, executed_by, created_at)
+- pdca_checks: 檢核紀錄 (id, pdca_cycle_id, check_date, completeness_status, timeliness_status, variance_analysis, checked_by, created_at)
+- pdca_actions: 改善行動 (id, pdca_cycle_id, root_cause, action_type, action_items, responsible_user_id, due_date, status, created_at)
 
 7. 緊急事件
-- incidents: 緊急事件 (id, title, description, severity, status, created_at)
+- incidents: 緊急事件 (id, incident_number, incident_type, severity, status, occurred_at, location, student_name, description, accountable_user_id, created_at)
+  - incident_type 可能值: 'campus_safety', 'medical', 'legal', 'visa', 'other'
+  - severity 可能值: 'critical', 'high', 'medium', 'low'
+  - status 可能值: 'open', 'in_progress', 'resolved', 'closed'
+- incident_checklists: 事件處理清單 (id, incident_id, item_text, is_completed, completed_by, completed_at)
 
 重要規則：
 1. 只生成 SELECT 查詢，不允許 INSERT、UPDATE、DELETE
@@ -302,11 +313,14 @@ A: SELECT id, title, description, status, priority, due_date FROM tasks WHERE st
 Q: "顯示所有策略專案"
 A: SELECT id, initiative_id, name_zh, initiative_type, status, responsible_unit FROM initiatives LIMIT 100;
 
-Q: "顯示所有 OKR"
-A: SELECT o.id, o.quarter, o.objective, i.name_zh as initiative_name FROM okrs o LEFT JOIN initiatives i ON o.initiative_id = i.id LIMIT 100;
+Q: "顯示所有 OKR 和關鍵結果的進度"
+A: SELECT o.id, o.quarter, o.objective, i.name_zh as initiative_name, kr.description as key_result, kr.progress_percentage, kr.status as kr_status FROM okrs o LEFT JOIN initiatives i ON o.initiative_id = i.id LEFT JOIN key_results kr ON kr.okr_id = o.id LIMIT 100;
 
 Q: "顯示高優先級的任務"
 A: SELECT id, title, description, status, priority, due_date FROM tasks WHERE priority = 'high' OR priority = 'urgent' LIMIT 100;
+
+Q: "顯示所有緊急事件"
+A: SELECT id, incident_number, incident_type, severity, status, student_name, occurred_at FROM incidents ORDER BY occurred_at DESC LIMIT 100;
 `;
 
 // Generate SQL query from natural language
